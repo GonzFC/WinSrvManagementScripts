@@ -1,29 +1,28 @@
 ﻿<# 
-Installs latest Jump Desktop Connect, enables RDP, sets ComputerName to host's name,
-and prompts for your 6-digit Connect Code.
+Instala la última Jump Desktop Connect, habilita RDP, fija ComputerName al hostname
+y solicita tu código de 6 dígitos (Connect Code).
 
-Paste the whole script into an elevated PowerShell session, or save and run it.
+Guárdalo como .ps1 y ejecútalo en PowerShell **elevado**.
 #>
-
-# --- Ensure script runs unrestricted in this session ---
-try {
-    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-} catch {
-    Write-Warning "Could not set ExecutionPolicy to Bypass. Proceeding anyway..."
-}
 
 [CmdletBinding()]
 param()
+
+# --- (Opcional) Relajar ExecutionPolicy solo para ESTA sesión ---
+#   OJO: si hay GPO forzada, esto no la sobrepasa para archivos .ps1.
+try { Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop } catch {}
 
 $ErrorActionPreference = 'Stop'
 
 function Assert-Admin {
   $id = [Security.Principal.WindowsIdentity]::GetCurrent()
-  $p  = New-Object Security.Principal.WindowsPrincipal($id)
-  if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "Re-launching with Administrator privileges..."
-    $psi = New-Object System.Diagnostics.ProcessStartInfo "PowerShell"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+  $pr = New-Object Security.Principal.WindowsPrincipal($id)
+  if (-not $pr.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Re-lanzando como Administrador..."
+    $scriptPath = if ($PSCommandPath) { $PSCommandPath } else { $MyInvocation.MyCommand.Path }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
     $psi.Verb = "runas"
     [Diagnostics.Process]::Start($psi) | Out-Null
     exit
@@ -31,68 +30,83 @@ function Assert-Admin {
 }
 Assert-Admin
 
-# Force TLS1.2 for downloads
+# TLS 1.2 para descargas en hosts viejos
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-# Ask for 6-digit user code (Connect Code)
+# Pedir el código de 6 dígitos (Connect Code)
 $rawCode = Read-Host "Enter your 6-digit Jump user code (Connect Code)"
 if ([string]::IsNullOrWhiteSpace($rawCode)) { throw "Connect Code is required." }
 $ConnectCode = ($rawCode -replace '\s','')
-
 if ($ConnectCode -notmatch '^\d{6}$' -and $ConnectCode.Length -lt 6) {
-  Write-Warning "The code doesn’t look like 6 digits; proceeding anyway."
+  Write-Warning "El código no parece de 6 dígitos; continúo (Jump también acepta códigos más largos de Teams)."
 }
 
-# Latest Jump Connect endpoints
+# Endpoints de la última versión
 $msiUrl = "https://jumpdesktop.com/downloads/connect/winmsi"
 $exeUrl = "https://jumpdesktop.com/downloads/connect/win"
 
+# Carpeta temporal
 $tempDir = Join-Path $env:TEMP ("JumpConnect_" + [Guid]::NewGuid())
 New-Item -ItemType Directory -Path $tempDir | Out-Null
 $msiPath = Join-Path $tempDir "JumpDesktopConnect.msi"
 $exePath = Join-Path $tempDir "JumpDesktopConnect.exe"
 
-function Download-File([string]$Url,[string]$Dest) {
-  Write-Host "Downloading $Url ..."
+function Download-File {
+  param([string]$Url,[string]$Dest)
+  Write-Host "Descargando $Url ..."
   Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing
 }
 
 $computerName = $env:COMPUTERNAME
 $installed = $false
 
+# Intentar MSI primero (acepta variables de instalador)
 try {
-  Download-File $msiUrl $msiPath
-  Write-Host "Installing Jump Desktop Connect (MSI, silent)..."
+  Download-File -Url $msiUrl -Dest $msiPath
+  Write-Host "Instalando Jump Desktop Connect (MSI, silencioso)..."
   $msiArgs = "/i `"$msiPath`" /qn CONNECTCODE=$ConnectCode RDPENABLED=true"
   $p = Start-Process -FilePath "msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru
   if ($p.ExitCode -eq 0) { $installed = $true }
-  else { Write-Warning "MSI failed with exit code $($p.ExitCode). Trying EXE..." }
-} catch { Write-Warning "MSI failed: $($_.Exception.Message). Trying EXE..." }
-
-if (-not $installed) {
-  Download-File $exeUrl $exePath
-  Write-Host "Installing Jump Desktop Connect (EXE, silent)..."
-  $exeArgs = "/qn CONNECTCODE=$ConnectCode RDPENABLED=true"
-  $p = Start-Process -FilePath $exePath -ArgumentList $exeArgs -Wait -PassThru
-  if ($p.ExitCode -ne 0) { throw "EXE failed with exit code $($p.ExitCode)." }
+  else { Write-Warning "MSI devolvió código $($p.ExitCode). Intento con EXE..." }
+}
+catch {
+  Write-Warning "Fallo con MSI: $($_.Exception.Message). Intento con EXE..."
 }
 
-# Locate JumpConnect.exe
-$connectPath = $null
-try { $connectPath = (Get-ItemProperty "HKLM:\SOFTWARE\Jump Desktop\Connect\Shared").ConnectPath } catch {}
-if (-not $connectPath -or -not (Test-Path $connectPath)) { throw "Couldn't find JumpConnect.exe." }
+if (-not $installed) {
+  Download-File -Url $exeUrl -Dest $exePath
+  Write-Host "Instalando Jump Desktop Connect (EXE, silencioso)..."
+  # El EXE también soporta /qn y variables de instalador
+  $exeArgs = "/qn CONNECTCODE=$ConnectCode RDPENABLED=true"
+  $p = Start-Process -FilePath $exePath -ArgumentList $exeArgs -Wait -PassThru
+  if ($p.ExitCode -ne 0) { throw "Instalación EXE falló con código $($p.ExitCode)." }
+}
 
-# Set ComputerName and reapply Connect Code
-Write-Host "Setting Jump ComputerName to '$computerName'..."
+# Localizar JumpConnect.exe por registro
+$connectPath = $null
+try {
+  $connectPath = (Get-ItemProperty "HKLM:\SOFTWARE\Jump Desktop\Connect\Shared" -ErrorAction Stop).ConnectPath
+} catch {
+  Start-Sleep -Seconds 3
+  try { $connectPath = (Get-ItemProperty "HKLM:\SOFTWARE\Jump Desktop\Connect\Shared" -ErrorAction Stop).ConnectPath } catch {}
+}
+
+if (-not $connectPath -or -not (Test-Path $connectPath)) {
+  throw "No se encontró JumpConnect.exe después de instalar."
+}
+
+# Ajustes post-instalación
+Write-Host "Fijando ComputerName en Jump a '$computerName'..."
 & $connectPath --serverconfig ComputerName="$computerName" | Out-Null
 
-Write-Host "Applying Connect Code..."
+Write-Host "Aplicando Connect Code para agregar el usuario de acceso remoto..."
 & $connectPath --connectcode $ConnectCode | Out-Null
 
 Write-Host ""
-Write-Host "✅ Jump Desktop Connect installed and configured."
-Write-Host "   • RDP tunneling enabled"
-Write-Host "   • Computer Name set to: $computerName"
-Write-Host "   • Connect Code applied"
+Write-Host "✅ Jump Desktop Connect instalado y configurado."
+Write-Host "   • RDP habilitado (tunneling)"
+Write-Host "   • Computer Name: $computerName"
+Write-Host "   • Connect Code aplicado"
 
+# Limpieza
 try { Remove-Item -Path $tempDir -Recurse -Force } catch {}
