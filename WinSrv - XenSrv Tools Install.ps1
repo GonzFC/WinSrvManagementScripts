@@ -19,6 +19,14 @@
     but the Management Agent may receive auto-updates.
 #>
 
+try {
+    Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
+} catch {
+    Write-Warning "Could not set ExecutionPolicy to Bypass. Proceeding anyway..."
+}
+
+
+
 param(
     [switch]$NoReboot,
     [switch]$DisableWUDrivers    # Optional: block Windows Update driver delivery
