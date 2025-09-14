@@ -74,7 +74,7 @@ Write-Host "✓ Enhanced privacy settings applied" -ForegroundColor Green
 Write-Host "`n🎯 Edge configuration complete!" -ForegroundColor Cyan
 Write-Host "   • Start page: about:blank" -ForegroundColor White
 Write-Host "   • New tabs: about:blank" -ForegroundColor White  
-Write-Host "   • Search: DuckDuckGo" -ForegroundColor White
+Write-Host "   • Search: $searchName" -ForegroundColor White
 Write-Host "   • Sync: Enabled" -ForegroundColor White
 Write-Host "   • Tracking: Disabled" -ForegroundColor White
 Write-Host "   • Microsoft bloat: Removed" -ForegroundColor White
