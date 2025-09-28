@@ -1,42 +1,43 @@
 ﻿<# 
-  Desktop Info Widget - Hotfix (WSB provider-wide + correct banner)
-  - Wallpaper + click-through + tray control
-  - Shows only WSB IDs: 4 (success), 5/517 (failures), last 8 days
-  - Idempotent installer
+  Desktop Info Widget - Unified Installer/Updater
+  Mode: Wallpaper (behind icons) + 100% click-through + tray control
+  Network: Hostname, Domain, Local IPv4, DNS Servers, Default Gateways, Public IPv4
+  WSB: last 8 days, IDs 4 (success) & 5/517 (failures) only
+  Idempotent: safe to run repeatedly; updates files, autostart, and restarts widget
 #>
 
 $ErrorActionPreference = 'Stop'
 
-# --- Install paths (ProgramData → LocalAppData fallback)
+# ---------- Install paths ----------
 $InstallRoot = Join-Path $env:ProgramData 'DesktopInfoWidget'
-try { if (-not (Test-Path $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null } }
-catch {
+try {
+  if (-not (Test-Path $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null }
+} catch {
   $InstallRoot = Join-Path $env:LOCALAPPDATA 'DesktopInfoWidget'
   if (-not (Test-Path $InstallRoot)) { New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null }
 }
 $WidgetScript = Join-Path $InstallRoot 'DesktopInfoWidget.ps1'
 $TaskName     = 'Desktop Info Widget'
 
-# --- Runtime (rewritten on every run)
+# ---------- Runtime script (always rewritten) ----------
 $widgetPs1 = @'
-# Desktop Info Widget (runtime, wallpaper + click-through + WSB provider-wide)
+# Desktop Info Widget (runtime)
+# Wallpaper (WorkerW) + 100% click-through + tray | DNS+Gateway | WSB (last 8d: 4,5,517)
 $ErrorActionPreference = "SilentlyContinue"
-$Version = "2025-09-01c"
-
-# Configure WSB window (days)
+$Version = "2025-09-28b"
 $WSB_WindowDays = 8
 
-# TLS for public IP fetch
+# TLS (for public IP)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
 
 # Single instance
 $global:mutex = New-Object System.Threading.Mutex($false, "Global\\DesktopInfoWidgetMutex")
 if (-not $global:mutex.WaitOne(0, $false)) { exit }
 
-# .NET assemblies
+# .NET
 Add-Type -AssemblyName PresentationCore,PresentationFramework,WindowsBase,System.Windows.Forms,System.Drawing
 
-# --- Win32 interop (WorkerW host + click-through)
+# ---- Win32 interop (WorkerW + click-through styles)
 $win32Src = @"
 using System;
 using System.Runtime.InteropServices;
@@ -69,10 +70,8 @@ public static class Win32 {
 
     [DllImport("user32.dll", EntryPoint="GetWindowLong", SetLastError=true)]
     public static extern int GetWindowLong32(IntPtr hWnd, int nIndex);
-
     [DllImport("user32.dll", EntryPoint="GetWindowLongPtr", SetLastError=true)]
     public static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
-
     public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex) {
         if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
         return new IntPtr(GetWindowLong32(hWnd, nIndex));
@@ -80,10 +79,8 @@ public static class Win32 {
 
     [DllImport("user32.dll", EntryPoint="SetWindowLong", SetLastError=true)]
     public static extern int SetWindowLong32(IntPtr hWnd, int nIndex, int dwNewLong);
-
     [DllImport("user32.dll", EntryPoint="SetWindowLongPtr", SetLastError=true)]
     public static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
-
     public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong) {
         if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
         return new IntPtr(SetWindowLong32(hWnd, nIndex, dwNewLong.ToInt32()));
@@ -93,7 +90,6 @@ public static class Win32 {
 Add-Type -TypeDefinition $win32Src -Language CSharp
 
 function Get-WorkerWHandle {
-  # Ask Progman to spawn WorkerW behind icons
   $progman = [Win32]::FindWindow("Progman", $null)
   if ($progman -ne [IntPtr]::Zero) {
     $out = [IntPtr]::Zero
@@ -115,7 +111,7 @@ function Get-WorkerWHandle {
   return [IntPtr]::Zero
 }
 
-# --- Style
+# ---- Style
 $bgColor     = "#202225"
 $fgColor     = "#DADADA"
 $mutedColor  = "#A8B0B9"
@@ -123,7 +119,7 @@ $accentColor = "#B7C5D3"
 $headerFont  = "Segoe UI"
 $monoFont    = "Consolas"
 
-# --- Data helpers
+# ---- Data helpers
 function Get-PublicIP {
   $urls = @('https://api.ipify.org','https://ifconfig.me/ip','https://ipv4.icanhazip.com')
   foreach ($u in $urls) {
@@ -142,6 +138,39 @@ function Get-LocalIPv4 {
       ForEach-Object { ($_ -split ':')[-1].Trim() }
   }
 }
+function Get-DNSServers {
+  try {
+    $all = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
+      Where-Object { $_.ServerAddresses -and $_.ServerAddresses.Count -gt 0 } |
+      ForEach-Object { $_.ServerAddresses } | Select-Object -Unique
+    if ($all -and $all.Count -gt 0) { return $all } else { return @('None') }
+  } catch {
+    # Fallback (parse ipconfig /all)
+    $m = (ipconfig /all) -join "`n"
+    $dns = [regex]::Matches($m, 'DNS Servers[^\r\n]*:\s*([\d\.]+)(?:\s*\r?\n\s+([\d\.]+))*')
+    if ($dns.Count -gt 0) {
+      $list = @()
+      foreach ($g in $dns) {
+        $list += $g.Groups[1].Value
+        for ($i=2; $i -lt $g.Groups.Count; $i++) { if ($g.Groups[$i].Value) { $list += $g.Groups[$i].Value } }
+      }
+      return ($list | Where-Object { $_ } | Select-Object -Unique)
+    }
+    @('None')
+  }
+}
+function Get-DefaultGateways {
+  try {
+    $gw = Get-NetIPConfiguration -ErrorAction Stop |
+      Where-Object { $_.IPv4DefaultGateway -and $_.IPv4DefaultGateway.NextHop } |
+      ForEach-Object { $_.IPv4DefaultGateway.NextHop } | Select-Object -Unique
+    if ($gw -and $gw.Count -gt 0) { return $gw } else { return @('None') }
+  } catch {
+    $gws = (ipconfig) | Select-String 'Default Gateway[^\r\n]*:\s*([\d\.]+)'
+    if ($gws) { return ($gws.Matches.Groups[1].Value | Where-Object { $_ } | Select-Object -Unique) }
+    @('None')
+  }
+}
 function Get-ComputerDomainSafe {
   try {
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -151,24 +180,20 @@ function Get-ComputerDomainSafe {
   $env:USERDOMAIN
 }
 
-# --- WSB: only IDs 4 (success) and 5/517 (failures), last $WSB_WindowDays days
+# ---- WSB: last $WSB_WindowDays days, IDs 4 (success) & 5/517 (failures)
 function Get-WSBEventsText {
   param([int]$Days = $WSB_WindowDays)
+  $start = (Get-Date).Date.AddDays(-[Math]::Abs($Days))
+  $ids   = @(4,5,517)
 
-  $start    = (Get-Date).Date.AddDays(-[Math]::Abs($Days))
-  $ids      = @(4,5,517)
-
-  # Provider-wide search (works even if specific channel is disabled)
   $e1 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Microsoft-Windows-Backup'; StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
-  # Fallback provider name seen on some builds
-  $e2 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Backup'; StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
+  $e2 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Backup';                   StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
 
   $events = @()
   if ($e1) { $events += $e1 }
   if ($e2) { $events += $e2 }
 
   if (-not $events -or $events.Count -eq 0) {
-    # Distinguish "no events" vs "feature/log not present"
     try {
       $null = Get-WinEvent -ListLog 'Microsoft-Windows-Backup/Operational' -ErrorAction Stop
       return @("No WSB events in last $Days days")
@@ -178,10 +203,8 @@ function Get-WSBEventsText {
   }
 
   $events = $events | Sort-Object TimeCreated -Descending
-
   $lines = @()
   foreach ($e in $events) {
-    # classify
     $tag = if ($e.Id -eq 4) { 'Success' } else { 'Failure' }
     $msg = ($e.Message -replace '\s+', ' ').Trim()
     $firstSentence = ($msg -split '(\. |\r?\n)')[0]
@@ -193,16 +216,18 @@ function Get-WSBEventsText {
 
 function Get-Info {
   [PSCustomObject]@{
-    Hostname  = $env:COMPUTERNAME
-    Domain    = Get-ComputerDomainSafe
-    LocalIPs  = (Get-LocalIPv4) -join "`n"
-    PublicIP  = Get-PublicIP
-    WSB       = (Get-WSBEventsText) -join "`n"
-    Timestamp = Get-Date
+    Hostname    = $env:COMPUTERNAME
+    Domain      = Get-ComputerDomainSafe
+    LocalIPs    = (Get-LocalIPv4) -join "`n"
+    DNSServers  = (Get-DNSServers) -join "`n"
+    Gateways    = (Get-DefaultGateways) -join "`n"
+    PublicIP    = Get-PublicIP
+    WSB         = (Get-WSBEventsText) -join "`n"
+    Timestamp   = Get-Date
   }
 }
 
-# --- UI (wallpaper + click-through)
+# ---- UI (WPF)
 $window                    = New-Object System.Windows.Window
 $window.Title              = "Desktop Info (Wallpaper)"
 $window.WindowStyle        = 'None'
@@ -210,8 +235,8 @@ $window.ResizeMode         = 'NoResize'
 $window.AllowsTransparency = $true
 $window.Background         = New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($bgColor))
 $window.Opacity            = 0.95
-$window.Width              = 480
-$window.Height             = 700
+$window.Width              = 520
+$window.Height             = 720
 $window.ShowInTaskbar      = $false
 $window.Topmost            = $false
 $window.IsHitTestVisible   = $false
@@ -262,14 +287,18 @@ function NewLabelValue($labelText, $valueText) {
 }
 
 $stack.Children.Add((NewHeader "System & Network")) | Out-Null
-$h  = NewLabelValue "Hostname" ""
-$d  = NewLabelValue "Domain / Workgroup" ""
-$li = NewLabelValue "Local IPv4" ""
-$pi = NewLabelValue "Public IPv4" ""
-$stack.Children.Add($h.Panel)  | Out-Null
-$stack.Children.Add($d.Panel)  | Out-Null
-$stack.Children.Add($li.Panel) | Out-Null
-$stack.Children.Add($pi.Panel) | Out-Null
+$h    = NewLabelValue "Hostname" ""
+$d    = NewLabelValue "Domain / Workgroup" ""
+$li   = NewLabelValue "Local IPv4" ""
+$dns  = NewLabelValue "DNS Servers" ""
+$gw   = NewLabelValue "Default Gateways" ""
+$pi   = NewLabelValue "Public IPv4" ""
+$stack.Children.Add($h.Panel)   | Out-Null
+$stack.Children.Add($d.Panel)   | Out-Null
+$stack.Children.Add($li.Panel)  | Out-Null
+$stack.Children.Add($dns.Panel) | Out-Null
+$stack.Children.Add($gw.Panel)  | Out-Null
+$stack.Children.Add($pi.Panel)  | Out-Null
 
 # --- WSB section
 $wsbLabel = New-Object Windows.Controls.TextBlock
@@ -299,7 +328,7 @@ $ts.Margin = '0,6,0,0'
 $ts.IsHitTestVisible = $false
 $stack.Children.Add($ts) | Out-Null
 
-# Position (top-right)
+# Position top-right
 $wa = [System.Windows.SystemParameters]::WorkArea
 $window.Left = $wa.Right - $window.Width - 12
 $window.Top  = $wa.Top + 12
@@ -307,15 +336,17 @@ $window.Top  = $wa.Top + 12
 # Refresh
 function Update-UI {
   $info = Get-Info
-  $h.ValueBlock.Text  = $info.Hostname
-  $d.ValueBlock.Text  = $info.Domain
-  $li.ValueBlock.Text = $info.LocalIPs
-  $pi.ValueBlock.Text = $info.PublicIP
-  $wsbBox.Text        = $info.WSB
-  $ts.Text            = "Updated: " + ($info.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))
+  $h.ValueBlock.Text    = $info.Hostname
+  $d.ValueBlock.Text    = $info.Domain
+  $li.ValueBlock.Text   = $info.LocalIPs
+  $dns.ValueBlock.Text  = $info.DNSServers
+  $gw.ValueBlock.Text   = $info.Gateways
+  $pi.ValueBlock.Text   = $info.PublicIP
+  $wsbBox.Text          = $info.WSB
+  $ts.Text              = "Updated: " + ($info.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))
 }
 
-# Hook into WorkerW + click-through extended styles
+# Host behind icons + click-through styles
 $window.SourceInitialized.Add({
   $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
   $hwnd   = $helper.Handle
@@ -327,13 +358,13 @@ $window.SourceInitialized.Add({
     $SWP_NOMOVE     = 0x0002
     $SWP_NOACTIVATE = 0x0010
     [void][Win32]::SetWindowPos($hwnd, $HWND_BOTTOM, 0,0,0,0, ($SWP_NOSIZE -bor $SWP_NOMOVE -bor $SWP_NOACTIVATE))
-    $ex   = [Win32]::GetWindowLongPtr($hwnd, [Win32]::GWL_EXSTYLE).ToInt64()
-    $ex  = $ex -bor [Win32]::WS_EX_TRANSPARENT -bor [Win32]::WS_EX_LAYERED -bor [Win32]::WS_EX_TOOLWINDOW
+    $ex = [Win32]::GetWindowLongPtr($hwnd, [Win32]::GWL_EXSTYLE).ToInt64()
+    $ex = $ex -bor [Win32]::WS_EX_TRANSPARENT -bor [Win32]::WS_EX_LAYERED -bor [Win32]::WS_EX_TOOLWINDOW
     [void][Win32]::SetWindowLongPtr($hwnd, [Win32]::GWL_EXSTYLE, [IntPtr]$ex)
   }
 })
 
-# Tray icon (control only from tray)
+# Tray icon (control from tray)
 $notifyIcon = New-Object System.Windows.Forms.NotifyIcon
 $notifyIcon.Icon = [System.Drawing.SystemIcons]::Information
 $notifyIcon.Visible = $true
@@ -364,10 +395,9 @@ try { $global:mutex.ReleaseMutex() | Out-Null } catch {}
 # Write runtime
 $widgetPs1 | Out-File -FilePath $WidgetScript -Encoding UTF8 -Force
 
-# --- Autostart (Scheduled Task → HKCU Run fallback)
+# ---------- Autostart (Scheduled Task → HKCU Run fallback) ----------
 function Ensure-Autostart {
   param([string]$TaskName,[string]$ScriptPath)
-
   $created = $false
   try {
     try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
@@ -392,7 +422,7 @@ function Ensure-Autostart {
 }
 $autostartMethod = Ensure-Autostart -TaskName $TaskName -ScriptPath $WidgetScript
 
-# --- Restart running instance (best-effort), then launch fresh
+# ---------- Restart any running instance, then launch fresh ----------
 try {
   $needle = [Regex]::Escape($WidgetScript)
   $proc = Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
@@ -405,5 +435,5 @@ try {
 Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$WidgetScript`"" -WindowStyle Hidden
 
 Write-Host "✅ Desktop Info Widget installed/updated in: $InstallRoot"
-Write-Host "   Autostart: $autostartMethod (Task 'Desktop Info Widget' or HKCU\\...\\Run)"
-Write-Host "   WSB panel: IDs 4 (success) and 5/517 (failure), last 8 days"
+Write-Host "   Autostart: $autostartMethod (Task '$TaskName' or HKCU\\...\\Run)"
+Write-Host "   Shows DNS Servers & Default Gateways; WSB last $() days"
