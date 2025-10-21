@@ -270,7 +270,7 @@ try {
   # Ejecutar up ahora si hay AuthKey (si no, la tarea al arranque lo intentará)
   if($AuthKey){
     Write-Host "Ejecutando: $tailscaleExe up $upArgs"
-    & $tailscaleExe up $upArgs
+    & tailscale up $upArgs
     if($LASTEXITCODE -ne 0){
       Write-Warning "tailscale up devolvió código $LASTEXITCODE; la tarea al arranque volverá a intentarlo."
     }
