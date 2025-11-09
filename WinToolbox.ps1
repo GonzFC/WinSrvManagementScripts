@@ -34,11 +34,11 @@ $ModulePath = Join-Path $ScriptRoot 'modules'
 $modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance')
 
 foreach ($module in $modules) {
-    $modulePath = Join-Path $ModulePath "$module.psm1"
+    $moduleFile = Join-Path $ModulePath "$module.psm1"
 
-    if (Test-Path $modulePath) {
+    if (Test-Path $moduleFile) {
         try {
-            Import-Module $modulePath -Force -ErrorAction Stop
+            Import-Module $moduleFile -Force -ErrorAction Stop
         }
         catch {
             Write-Error "Failed to load module $module : $_"
@@ -46,7 +46,7 @@ foreach ($module in $modules) {
         }
     }
     else {
-        Write-Error "Module not found: $modulePath"
+        Write-Error "Module not found: $moduleFile"
         exit 1
     }
 }
