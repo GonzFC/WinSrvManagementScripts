@@ -387,7 +387,7 @@ function Stop-ServiceSafe {
         return $true
     }
     catch {
-        Write-LogMessage "Failed to stop service $ServiceName: $_" -Level Warning -Component 'Service'
+        Write-LogMessage "Failed to stop service ${ServiceName}: ${_}" -Level Warning -Component 'Service'
         return $false
     }
 }
@@ -419,7 +419,7 @@ function Start-ServiceSafe {
         return $true
     }
     catch {
-        Write-LogMessage "Failed to start service $ServiceName: $_" -Level Warning -Component 'Service'
+        Write-LogMessage "Failed to start service ${ServiceName}: ${_}" -Level Warning -Component 'Service'
         return $false
     }
 }
