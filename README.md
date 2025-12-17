@@ -18,7 +18,9 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
 ### Maintenance
 - **Desktop Info Widget**: System and network information overlay on desktop
 - **TLS/PowerShell Upgrade**: Modernize legacy Windows systems (2008R2/2012/2012R2) with TLS 1.2, .NET 4.8, and PowerShell 5.1
-- **XenServer VM Tools**: Automated installation with pinned drivers and auto-updating management agent
+- **Virtualization Guest Tools**: Automated installation of XCP-ng Windows PV Tools or XenServer/Citrix Hypervisor VM Tools
+  - XCP-ng PV Tools v9.1.100 (recommended for XCP-ng hosts, requires Windows 10 1607+/Server 2016+)
+  - XenServer/Citrix VM Tools (compatible with older Windows versions)
 
 ## Requirements
 
@@ -120,7 +122,27 @@ The original standalone scripts are preserved in the repository for reference:
 - `WinSrv - Reclaim Disk Space.ps1`
 - `WinSrv - XenSrv Tools Install.ps1`
 
-## Edge Browser Fix (Windows 10/11)
+## Recent Improvements
+
+### XCP-ng Guest Tools Support (December 2024)
+
+The virtualization tools installer now supports both XCP-ng and XenServer:
+
+- **XCP-ng Windows PV Tools v9.1.100** (Primary Option)
+  - Latest stable release with digitally signed drivers
+  - Improved performance and features for XCP-ng hosts
+  - Requires Windows 10 1607 / Windows Server 2016 or newer
+  - Open-source and community-supported
+  - Includes security fixes for XSA-468 vulnerabilities
+
+- **XenServer/Citrix Hypervisor VM Tools** (Legacy Option)
+  - Official Citrix management agent
+  - Compatible with older Windows versions
+  - Stable and widely deployed
+
+The installer automatically detects OS compatibility and recommends the appropriate option.
+
+### Edge Browser Fix (Windows 10/11)
 
 The Edge hardening script now properly disables the MSN home page and news feed on Windows 10/11 clients by:
 

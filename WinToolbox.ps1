@@ -251,7 +251,7 @@ function Show-MaintenanceMenu {
     $options = [ordered]@{
         '1' = 'Install Desktop Info Widget'
         '2' = 'Upgrade TLS and PowerShell (Legacy Systems)'
-        '3' = 'Install XenServer VM Tools'
+        '3' = 'Install Virtualization Tools (XCP-ng / XenServer)'
     }
 
     $selection = Show-Menu -Title "Maintenance" -Options $options -AllowBack
@@ -282,7 +282,7 @@ function Show-MaintenanceMenu {
 
         '3' {
             Write-Host ""
-            Write-Host "XenServer VM Tools Installation Options:" -ForegroundColor Cyan
+            Write-Host "Virtualization Guest Tools Installation:" -ForegroundColor Cyan
             Write-Host ""
 
             $noReboot = -not (Show-Confirmation -Message "Automatically reboot after installation?" -DefaultYes)
@@ -291,7 +291,7 @@ function Show-MaintenanceMenu {
             $disableWUDrivers = Show-Confirmation -Message "Block Windows Update from delivering drivers?" -DefaultYes
 
             Write-Host ""
-            Write-Host "Installing XenServer VM Tools..." -ForegroundColor Cyan
+            Write-Host "Starting installation (you will choose XCP-ng or XenServer)..." -ForegroundColor Cyan
 
             Install-XenServerTools -NoReboot:$noReboot -DisableWUDrivers:$disableWUDrivers
 
