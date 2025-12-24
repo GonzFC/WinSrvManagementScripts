@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.0'
+$script:ToolboxVersion = '1.0.1'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -48,6 +48,19 @@ if (-not (Test-Path $ModulePath)) {
     exit 1
 }
 
+# Display startup banner
+Clear-Host
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host " Windows Management Toolbox" -ForegroundColor Cyan
+Write-Host " v$script:ToolboxVersion" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "PowerShell Version: $($PSVersionTable.PSVersion)" -ForegroundColor Green
+Write-Host "Installation Path:  $ScriptRoot" -ForegroundColor Green
+Write-Host ""
+Write-Host "Loading modules..." -ForegroundColor White
+
 # Unblock all module files to prevent execution policy issues
 Get-ChildItem -Path $ModulePath -Filter "*.psm1" -File | Unblock-File -ErrorAction SilentlyContinue
 
@@ -59,9 +72,43 @@ foreach ($module in $modules) {
 
     if (Test-Path $moduleFile) {
         try {
+            Write-Host "  Loading $module..." -NoNewline -ForegroundColor Gray
+
+            # Import with explicit path and global scope
             Import-Module $moduleFile -Force -DisableNameChecking -Scope Global -ErrorAction Stop
+
+            # Verify the module loaded by checking for a known function
+            $testFunction = switch ($module) {
+                'Common' { 'Show-Menu' }
+                'SystemOptimization' { 'Invoke-DiskSpaceReclamation' }
+                'SecurityPrivacy' { 'Set-EdgePrivacySettings' }
+                'RemoteAccess' { 'Install-Tailscale' }
+                'Maintenance' { 'Install-XenServerTools' }
+            }
+
+            if (Get-Command $testFunction -ErrorAction SilentlyContinue) {
+                Write-Host " OK" -ForegroundColor Green
+            }
+            else {
+                Write-Host " FAILED (function $testFunction not found)" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "ERROR: Module loaded but functions not available" -ForegroundColor Red
+                Write-Host ""
+                Write-Host "Diagnostic Information:" -ForegroundColor Yellow
+                Write-Host "  Module: $module" -ForegroundColor White
+                Write-Host "  File: $moduleFile" -ForegroundColor White
+                Write-Host "  Test Function: $testFunction" -ForegroundColor White
+                Write-Host ""
+                Write-Host "Available Commands:" -ForegroundColor Yellow
+                Get-Command -Module $module | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor White }
+                Write-Host ""
+                Write-Host "Press any key to exit..." -ForegroundColor Gray
+                $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+                exit 1
+            }
         }
         catch {
+            Write-Host " FAILED" -ForegroundColor Red
             Write-Host ""
             Write-Host "ERROR: Failed to load module $module" -ForegroundColor Red
             Write-Host "Module path: $moduleFile" -ForegroundColor Yellow
@@ -81,6 +128,10 @@ foreach ($module in $modules) {
         exit 1
     }
 }
+
+Write-Host ""
+Write-Host "All modules loaded successfully!" -ForegroundColor Green
+Write-Host ""
 
 #region Update Management
 
