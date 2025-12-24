@@ -30,6 +30,20 @@ param(
 $ScriptRoot = $PSScriptRoot
 $ModulePath = Join-Path $ScriptRoot 'modules'
 
+# Verify modules directory exists
+if (-not (Test-Path $ModulePath)) {
+    Write-Host ""
+    Write-Host "ERROR: Modules directory not found: $ModulePath" -ForegroundColor Red
+    Write-Host "Please ensure the 'modules' folder exists in the same directory as WinToolbox.ps1" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Press any key to exit..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    exit 1
+}
+
+# Unblock all module files to prevent execution policy issues
+Get-ChildItem -Path $ModulePath -Filter "*.psm1" -File | Unblock-File -ErrorAction SilentlyContinue
+
 # Import all modules
 $modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance')
 
@@ -38,15 +52,25 @@ foreach ($module in $modules) {
 
     if (Test-Path $moduleFile) {
         try {
-            Import-Module $moduleFile -Force -ErrorAction Stop
+            Import-Module $moduleFile -Force -DisableNameChecking -ErrorAction Stop
         }
         catch {
-            Write-Error "Failed to load module $module : $_"
+            Write-Host ""
+            Write-Host "ERROR: Failed to load module $module" -ForegroundColor Red
+            Write-Host "Module path: $moduleFile" -ForegroundColor Yellow
+            Write-Host "Error: $_" -ForegroundColor Red
+            Write-Host ""
+            Write-Host "Press any key to exit..." -ForegroundColor Gray
+            $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
             exit 1
         }
     }
     else {
-        Write-Error "Module not found: $moduleFile"
+        Write-Host ""
+        Write-Host "ERROR: Module not found: $moduleFile" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Press any key to exit..." -ForegroundColor Gray
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
         exit 1
     }
 }
