@@ -2,6 +2,14 @@
 
 A unified, menu-driven PowerShell application for Windows Server and Client management tasks.
 
+## Quick Start
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+One command to install and run the complete Windows management suite!
+
 ## Features
 
 ### System Optimization
@@ -30,6 +38,29 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
 
 ## Installation
 
+### One-Liner Installation (Recommended)
+
+Open PowerShell as Administrator and run:
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+Or the alternative syntax:
+
+```powershell
+irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1 | iex
+```
+
+This will:
+- Automatically elevate to Administrator if needed
+- Download the latest version from GitHub
+- Install to `C:\ProgramData\WinToolbox`
+- Create a Start Menu shortcut
+- Offer to launch the toolbox immediately
+
+### Manual Installation
+
 1. Clone or download this repository
 2. Ensure the following structure exists:
    ```
@@ -43,19 +74,40 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
    │   └── Maintenance.psm1
    └── README.md
    ```
+3. Run `WinToolbox.ps1` as Administrator
 
 ## Usage
 
 ### Interactive Mode
 
-Open PowerShell as Administrator and run:
+After installation, you can run the toolbox in several ways:
 
+**From Start Menu:**
+- Search for "Windows Management Toolbox" and click the shortcut
+
+**From PowerShell:**
+```powershell
+cd C:\ProgramData\WinToolbox
+.\WinToolbox.ps1
+```
+
+**Or if you cloned manually:**
 ```powershell
 cd C:\Path\To\WinSrvManagementScripts
 .\WinToolbox.ps1
 ```
 
 Navigate through the menu using number keys to select options.
+
+### Updating the Toolbox
+
+To update to the latest version, simply run the one-liner installer again:
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+This will download and replace the existing installation with the latest version.
 
 ### Automated Disk Cleanup (Scheduled Task)
 
