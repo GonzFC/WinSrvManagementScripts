@@ -198,9 +198,8 @@ if ($response -eq '' -or $response -match '^[Yy]') {
     Write-Host ""
     Start-Sleep -Seconds 1
 
-    # Launch the toolbox
-    Set-Location $installPath
-    & "$installPath\WinToolbox.ps1"
+    # Launch the toolbox in a new PowerShell session
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$installPath\WinToolbox.ps1`"" -WorkingDirectory $installPath
 }
 else {
     Write-Host ""
