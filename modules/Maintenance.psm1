@@ -388,11 +388,11 @@ function Test-TLSConnection {
 
 #endregion
 
-#region XenServer Tools Installation
+#region XenServer / XCP-ng Tools Installation
 
 <#
 .SYNOPSIS
-    Installs XenServer/Citrix Hypervisor VM Tools
+    Installs XCP-ng or XenServer/Citrix Hypervisor VM Tools
 #>
 function Install-XenServerTools {
     [CmdletBinding()]
@@ -401,12 +401,182 @@ function Install-XenServerTools {
         [switch]$DisableWUDrivers
     )
 
-    Write-LogMessage "Installing XenServer VM Tools..." -Level Info -Component 'XenServer'
+    Write-LogMessage "Starting virtualization tools installer..." -Level Info -Component 'VMTools'
 
     Enable-Tls12
 
+    # Get OS information and check XCP-ng compatibility
+    $osInfo = Get-OSVersionInfo
+    $xcpngCompatible = Test-XCPngCompatibility -OSInfo $osInfo
+
+    # Interactive menu
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host " Virtualization Guest Tools" -ForegroundColor Cyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    Write-Host "System Information:" -ForegroundColor Yellow
+    Write-Host "  OS: $($osInfo.Caption)" -ForegroundColor White
+    Write-Host "  Version: $($osInfo.Version) (Build $($osInfo.Build))" -ForegroundColor White
+    Write-Host ""
+
+    Write-Host "Available Options:" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  [1] XCP-ng Windows PV Tools (v9.1.100)" -ForegroundColor White
+    Write-Host "      - Latest stable release with signed drivers" -ForegroundColor Gray
+    Write-Host "      - Improved performance for XCP-ng hosts" -ForegroundColor Gray
+    Write-Host "      - Requires: Windows 10 1607+ / Server 2016+" -ForegroundColor Gray
+
+    if (-not $xcpngCompatible) {
+        Write-Host "      - NOT COMPATIBLE WITH THIS OS VERSION" -ForegroundColor Red
+    }
+
+    Write-Host ""
+    Write-Host "  [2] XenServer/Citrix Hypervisor VM Tools" -ForegroundColor White
+    Write-Host "      - Official Citrix management agent (v9.4.1+)" -ForegroundColor Gray
+    Write-Host "      - Compatible with older Windows versions" -ForegroundColor Gray
+    Write-Host "      - Stable and widely deployed" -ForegroundColor Gray
+    Write-Host ""
+
+    if (-not $xcpngCompatible) {
+        Write-Host "Recommendation: Option 2 (XenServer) - XCP-ng tools require newer OS" -ForegroundColor Yellow
+    } else {
+        Write-Host "Recommendation: Option 1 (XCP-ng) if running on XCP-ng host" -ForegroundColor Yellow
+    }
+
+    Write-Host ""
+    Write-Host -NoNewline "Select option [1 or 2]: " -ForegroundColor Cyan
+    $choice = Read-Host
+
+    if ($choice -ne '1' -and $choice -ne '2') {
+        Write-LogMessage "Invalid selection: $choice" -Level Error -Component 'VMTools'
+        throw "Invalid selection. Please select 1 or 2."
+    }
+
+    if ($choice -eq '1' -and -not $xcpngCompatible) {
+        Write-LogMessage "XCP-ng tools not compatible with OS version: $($osInfo.Caption)" -Level Error -Component 'VMTools'
+        Write-Host ""
+        Write-Host "ERROR: XCP-ng tools require Windows 10 1607 / Server 2016 or newer." -ForegroundColor Red
+        Write-Host "Your system: $($osInfo.Caption) (Build $($osInfo.Build))" -ForegroundColor Yellow
+        Write-Host ""
+        throw "XCP-ng tools not compatible with this OS version"
+    }
+
+    Write-Host ""
+
+    # Install based on choice
+    if ($choice -eq '1') {
+        Install-XCPngTools -NoReboot:$NoReboot -DisableWUDrivers:$DisableWUDrivers
+    } else {
+        Install-XenServerToolsLegacy -NoReboot:$NoReboot -DisableWUDrivers:$DisableWUDrivers
+    }
+}
+
+function Get-OSVersionInfo {
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $version = [Version]$os.Version
+        return [PSCustomObject]@{
+            Caption = $os.Caption
+            Version = $version
+            Build = $os.BuildNumber
+        }
+    } catch {
+        return $null
+    }
+}
+
+function Test-XCPngCompatibility {
+    param($OSInfo)
+
+    if (-not $OSInfo) { return $false }
+
+    # XCP-ng requires Windows 10 1607 (build 14393) or Windows Server 2016 minimum
+    if ($OSInfo.Version.Major -lt 10) {
+        return $false
+    }
+
+    if ($OSInfo.Version.Major -eq 10 -and $OSInfo.Build -lt 14393) {
+        return $false
+    }
+
+    return $true
+}
+
+function Install-XCPngTools {
+    [CmdletBinding()]
+    param(
+        [switch]$NoReboot,
+        [switch]$DisableWUDrivers
+    )
+
+    Write-LogMessage "Installing XCP-ng Windows PV Tools v9.1.100..." -Level Info -Component 'XCPng'
+
+    $url = 'https://github.com/xcp-ng/win-pv-drivers/releases/download/v9.1.100/XenTools-x64.msi'
+    $destination = Join-Path $env:TEMP 'XCPng-PV-Tools-x64.msi'
+
+    try {
+        Write-Host "Downloading XCP-ng PV Tools from GitHub..." -ForegroundColor White
+        Write-LogMessage "Downloading from $url" -Level Info -Component 'XCPng'
+        Invoke-WebRequest -Uri $url -OutFile $destination -UseBasicParsing
+
+        Write-Host "Installing XCP-ng PV Tools (this may take a few minutes)..." -ForegroundColor White
+        Write-LogMessage "Installing XCP-ng PV Tools..." -Level Info -Component 'XCPng'
+
+        $logFile = Join-Path $env:TEMP 'xcpng-install.log'
+        $msiArgs = @(
+            '/i', $destination,
+            '/qn',
+            '/norestart',
+            '/log', $logFile
+        )
+
+        $process = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru
+
+        switch ($process.ExitCode) {
+            0 {
+                Write-LogMessage "Installation completed successfully" -Level Success -Component 'XCPng'
+                Write-Host "Installation completed successfully." -ForegroundColor Green
+            }
+            3010 {
+                Write-LogMessage "Installation completed, reboot required" -Level Info -Component 'XCPng'
+                Write-Host "Installation completed; reboot required (exit code 3010)." -ForegroundColor Yellow
+            }
+            default {
+                Write-LogMessage "msiexec exited with code $($process.ExitCode)" -Level Warning -Component 'XCPng'
+                Write-Host "WARNING: msiexec exited with code $($process.ExitCode)" -ForegroundColor Yellow
+                Write-Host "Check log: $logFile" -ForegroundColor Gray
+            }
+        }
+
+        Write-Host ""
+        Write-Host "XCP-ng Windows PV Tools installation complete!" -ForegroundColor Green
+        Write-Host "  Version: 9.1.100" -ForegroundColor White
+        Write-Host "  Drivers: Digitally signed, pinned" -ForegroundColor White
+        Write-Host "  Install log: $logFile" -ForegroundColor White
+
+    } catch {
+        Write-LogMessage "XCP-ng installation failed: ${_}" -Level Error -Component 'XCPng'
+        throw "XCP-ng installation failed: $_"
+    }
+
+    # Apply post-install settings
+    Apply-VMToolsPostInstall -DisableWUDrivers:$DisableWUDrivers -NoReboot:$NoReboot
+}
+
+function Install-XenServerToolsLegacy {
+    [CmdletBinding()]
+    param(
+        [switch]$NoReboot,
+        [switch]$DisableWUDrivers
+    )
+
+    Write-LogMessage "Installing XenServer/Citrix Hypervisor VM Tools..." -Level Info -Component 'XenServer'
+
     # Discover latest MSI
     try {
+        Write-Host "Fetching latest XenServer Tools download link..." -ForegroundColor White
         Write-LogMessage "Fetching latest XenServer Tools download link..." -Level Info -Component 'XenServer'
         $pageUrl = 'https://www.xenserver.com/downloads'
         $html = (Invoke-WebRequest -UseBasicParsing $pageUrl).Content
@@ -421,63 +591,102 @@ function Install-XenServerTools {
     }
     catch {
         Write-LogMessage "Falling back to known stable version 9.4.1" -Level Warning -Component 'XenServer'
+        Write-Host "Falling back to known stable version 9.4.1" -ForegroundColor Yellow
         $url = 'https://downloads.xenserver.com/vm-tools-windows/9.4.1/managementagent-9.4.1-x64.msi'
     }
 
-    # Download
     $destination = Join-Path $env:TEMP 'XenServer-VM-Tools-x64.msi'
-    Write-LogMessage "Downloading from $url..." -Level Info -Component 'XenServer'
-    Invoke-WebRequest -Uri $url -OutFile $destination -UseBasicParsing
 
-    # Install
-    Write-LogMessage "Installing XenServer VM Tools..." -Level Info -Component 'XenServer'
-    $msiArgs = @(
-        '/i', $destination,
-        '/qn',
-        '/norestart',
-        'ALLOWDRIVERINSTALL=YES',
-        'ALLOWDRIVERUPDATE=NO',
-        'ALLOWAUTOUPDATE=YES',
-        'IDENTIFYAUTOUPDATE=NO'
-    )
+    try {
+        Write-Host "Downloading: $url" -ForegroundColor White
+        Write-LogMessage "Downloading from $url" -Level Info -Component 'XenServer'
+        Invoke-WebRequest -Uri $url -OutFile $destination -UseBasicParsing
 
-    $process = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru
+        Write-Host "Installing XenServer VM Tools (this may take a few minutes)..." -ForegroundColor White
+        Write-LogMessage "Installing XenServer VM Tools..." -Level Info -Component 'XenServer'
 
-    switch ($process.ExitCode) {
-        0 { Write-LogMessage "Installation completed successfully" -Level Success -Component 'XenServer' }
-        3010 { Write-LogMessage "Installation completed, reboot required" -Level Info -Component 'XenServer' }
-        default { throw "msiexec exited with code $($process.ExitCode)" }
+        $msiArgs = @(
+            '/i', $destination,
+            '/qn',
+            '/norestart',
+            'ALLOWDRIVERINSTALL=YES',
+            'ALLOWDRIVERUPDATE=NO',
+            'ALLOWAUTOUPDATE=YES',
+            'IDENTIFYAUTOUPDATE=NO'
+        )
+
+        $process = Start-Process msiexec.exe -ArgumentList $msiArgs -Wait -PassThru
+
+        switch ($process.ExitCode) {
+            0 {
+                Write-LogMessage "Installation completed successfully" -Level Success -Component 'XenServer'
+                Write-Host "Installation completed successfully." -ForegroundColor Green
+            }
+            3010 {
+                Write-LogMessage "Installation completed, reboot required" -Level Info -Component 'XenServer'
+                Write-Host "Installation completed; reboot required (exit code 3010)." -ForegroundColor Yellow
+            }
+            default {
+                Write-LogMessage "msiexec exited with code $($process.ExitCode)" -Level Error -Component 'XenServer'
+                throw "msiexec exited with code $($process.ExitCode)"
+            }
+        }
+
+        Write-Host ""
+        Write-Host "XenServer VM Tools installation complete!" -ForegroundColor Green
+        Write-Host "  Drivers: Installed (pinned, no auto-update)" -ForegroundColor White
+        Write-Host "  Management Agent: Auto-update enabled" -ForegroundColor White
+
+    } catch {
+        Write-LogMessage "XenServer installation failed: ${_}" -Level Error -Component 'XenServer'
+        throw "XenServer installation failed: $_"
     }
+
+    # Apply post-install settings
+    Apply-VMToolsPostInstall -DisableWUDrivers:$DisableWUDrivers -NoReboot:$NoReboot
+}
+
+function Apply-VMToolsPostInstall {
+    [CmdletBinding()]
+    param(
+        [switch]$DisableWUDrivers,
+        [switch]$NoReboot
+    )
 
     # Disable driver delivery from Windows Update if requested
     if ($DisableWUDrivers) {
-        Write-LogMessage "Disabling driver delivery via Windows Update..." -Level Info -Component 'XenServer'
-        $wuKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
-        if (-not (Test-Path $wuKey)) {
-            New-Item -Path $wuKey -Force | Out-Null
+        Write-Host ""
+        Write-Host "Disabling driver delivery via Windows Update..." -ForegroundColor White
+        Write-LogMessage "Disabling driver delivery via Windows Update..." -Level Info -Component 'VMTools'
+
+        try {
+            $wuKey = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+            if (-not (Test-Path $wuKey)) {
+                New-Item -Path $wuKey -Force | Out-Null
+            }
+            New-ItemProperty -Path $wuKey -Name 'ExcludeWUDriversInQualityUpdate' -PropertyType DWord -Value 1 -Force | Out-Null
+            gpupdate /target:computer /force | Out-Null
+            Write-Host "Windows Update driver delivery disabled." -ForegroundColor Green
+            Write-LogMessage "Windows Update driver delivery disabled" -Level Success -Component 'VMTools'
+        } catch {
+            Write-Host "WARNING: Could not disable Windows Update drivers - $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-LogMessage "Could not disable Windows Update drivers: ${_}" -Level Warning -Component 'VMTools'
         }
-        New-ItemProperty -Path $wuKey -Name 'ExcludeWUDriversInQualityUpdate' -PropertyType DWord -Value 1 -Force | Out-Null
-        gpupdate /target:computer /force | Out-Null
     }
 
-    Write-LogMessage "XenServer VM Tools installed successfully" -Level Success -Component 'XenServer'
-
+    # Reboot handling
     Write-Host ""
-    Write-Host "XenServer VM Tools installation complete!" -ForegroundColor Green
-    Write-Host "  Drivers: Installed (pinned, no auto-update)" -ForegroundColor White
-    Write-Host "  Management Agent: Auto-update enabled" -ForegroundColor White
-    Write-Host ""
-
-    # Reboot unless suppressed
     if (-not $NoReboot) {
         Write-Host "Rebooting in 10 seconds to complete driver initialization..." -ForegroundColor Yellow
         Write-Host "Press Ctrl+C to cancel" -ForegroundColor Gray
+        Write-LogMessage "Initiating reboot in 10 seconds..." -Level Info -Component 'VMTools'
         Start-Sleep -Seconds 10
         Restart-Computer -Force
     }
     else {
         Write-Host "Reboot required to complete driver initialization." -ForegroundColor Yellow
         Write-Host ""
+        Write-LogMessage "Reboot required to complete installation" -Level Info -Component 'VMTools'
     }
 }
 

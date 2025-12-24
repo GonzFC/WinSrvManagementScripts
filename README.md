@@ -2,6 +2,14 @@
 
 A unified, menu-driven PowerShell application for Windows Server and Client management tasks.
 
+## Quick Start
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+One command to install and run the complete Windows management suite!
+
 ## Features
 
 ### System Optimization
@@ -18,7 +26,9 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
 ### Maintenance
 - **Desktop Info Widget**: System and network information overlay on desktop
 - **TLS/PowerShell Upgrade**: Modernize legacy Windows systems (2008R2/2012/2012R2) with TLS 1.2, .NET 4.8, and PowerShell 5.1
-- **XenServer VM Tools**: Automated installation with pinned drivers and auto-updating management agent
+- **Virtualization Guest Tools**: Automated installation of XCP-ng Windows PV Tools or XenServer/Citrix Hypervisor VM Tools
+  - XCP-ng PV Tools v9.1.100 (recommended for XCP-ng hosts, requires Windows 10 1607+/Server 2016+)
+  - XenServer/Citrix VM Tools (compatible with older Windows versions)
 
 ## Requirements
 
@@ -27,6 +37,29 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
 - **Operating System**: Windows Server 2012 R2+ or Windows 10/11
 
 ## Installation
+
+### One-Liner Installation (Recommended)
+
+Open PowerShell as Administrator and run:
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+Or the alternative syntax:
+
+```powershell
+irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1 | iex
+```
+
+This will:
+- Automatically elevate to Administrator if needed
+- Download the latest version from GitHub
+- Install to `C:\ProgramData\WinToolbox`
+- Create a Start Menu shortcut
+- Offer to launch the toolbox immediately
+
+### Manual Installation
 
 1. Clone or download this repository
 2. Ensure the following structure exists:
@@ -41,19 +74,40 @@ A unified, menu-driven PowerShell application for Windows Server and Client mana
    │   └── Maintenance.psm1
    └── README.md
    ```
+3. Run `WinToolbox.ps1` as Administrator
 
 ## Usage
 
 ### Interactive Mode
 
-Open PowerShell as Administrator and run:
+After installation, you can run the toolbox in several ways:
 
+**From Start Menu:**
+- Search for "Windows Management Toolbox" and click the shortcut
+
+**From PowerShell:**
+```powershell
+cd C:\ProgramData\WinToolbox
+.\WinToolbox.ps1
+```
+
+**Or if you cloned manually:**
 ```powershell
 cd C:\Path\To\WinSrvManagementScripts
 .\WinToolbox.ps1
 ```
 
 Navigate through the menu using number keys to select options.
+
+### Updating the Toolbox
+
+To update to the latest version, simply run the one-liner installer again:
+
+```powershell
+iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/install.ps1)
+```
+
+This will download and replace the existing installation with the latest version.
 
 ### Automated Disk Cleanup (Scheduled Task)
 
@@ -120,7 +174,27 @@ The original standalone scripts are preserved in the repository for reference:
 - `WinSrv - Reclaim Disk Space.ps1`
 - `WinSrv - XenSrv Tools Install.ps1`
 
-## Edge Browser Fix (Windows 10/11)
+## Recent Improvements
+
+### XCP-ng Guest Tools Support (December 2024)
+
+The virtualization tools installer now supports both XCP-ng and XenServer:
+
+- **XCP-ng Windows PV Tools v9.1.100** (Primary Option)
+  - Latest stable release with digitally signed drivers
+  - Improved performance and features for XCP-ng hosts
+  - Requires Windows 10 1607 / Windows Server 2016 or newer
+  - Open-source and community-supported
+  - Includes security fixes for XSA-468 vulnerabilities
+
+- **XenServer/Citrix Hypervisor VM Tools** (Legacy Option)
+  - Official Citrix management agent
+  - Compatible with older Windows versions
+  - Stable and widely deployed
+
+The installer automatically detects OS compatibility and recommends the appropriate option.
+
+### Edge Browser Fix (Windows 10/11)
 
 The Edge hardening script now properly disables the MSN home page and news feed on Windows 10/11 clients by:
 
