@@ -6,9 +6,8 @@
     Functions for disk space reclamation and UI/visual optimizations
 #>
 
-# Import common functions
-$commonModule = Join-Path $PSScriptRoot 'Common.psm1'
-Import-Module $commonModule -Force
+# Note: Common functions are loaded by WinToolbox.ps1 before this module
+# No need to import Common.psm1 here when using Invoke-Expression
 
 #region Disk Space Reclamation
 
@@ -363,7 +362,7 @@ function Register-DiskCleanupTask {
 
     $taskName = 'StorageCleanup-Weekly'
     $taskPath = '\Maintenance'
-    $scriptPath = Join-Path (Split-Path $PSScriptRoot -Parent) 'WinToolbox.ps1'
+    $scriptPath = Join-Path $Global:ToolboxRoot 'WinToolbox.ps1'
 
     try {
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `

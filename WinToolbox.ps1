@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.4'
+$script:ToolboxVersion = '1.0.5'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -47,6 +47,9 @@ if (-not (Test-Path $ModulePath)) {
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
     exit 1
 }
+
+# Set global variable for modules to use (since $PSScriptRoot isn't available with Invoke-Expression)
+$Global:ToolboxRoot = $ScriptRoot
 
 # Display startup banner
 Clear-Host

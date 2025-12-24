@@ -6,9 +6,8 @@
     Functions for browser hardening and privacy configurations
 #>
 
-# Import common functions
-$commonModule = Join-Path $PSScriptRoot 'Common.psm1'
-Import-Module $commonModule -Force
+# Note: Common functions are loaded by WinToolbox.ps1 before this module
+# No need to import Common.psm1 here when using Invoke-Expression
 
 #region Microsoft Edge Hardening
 

@@ -6,9 +6,8 @@
     Functions for installing and configuring remote access solutions (Tailscale, Jump Desktop)
 #>
 
-# Import common functions
-$commonModule = Join-Path $PSScriptRoot 'Common.psm1'
-Import-Module $commonModule -Force
+# Note: Common functions are loaded by WinToolbox.ps1 before this module
+# No need to import Common.psm1 here when using Invoke-Expression
 
 #region Tailscale Installation
 
