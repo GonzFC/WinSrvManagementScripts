@@ -109,6 +109,10 @@ if ($gitAvailable) {
         Write-ColorOutput "Cloning repository..." -Color Cyan
         git clone --quiet https://github.com/GonzFC/WinSrvManagementScripts.git $installPath
 
+        # Unblock all files (removes Zone.Identifier that blocks execution)
+        Write-ColorOutput "Unblocking files..." -Color White
+        Get-ChildItem -Path $installPath -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
+
         Write-ColorOutput "Repository cloned successfully!" -Color Green
     }
     catch {
@@ -150,6 +154,10 @@ if (-not $gitAvailable) {
         # Cleanup
         Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
         Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Unblock all files (removes Zone.Identifier that blocks execution)
+        Write-ColorOutput "Unblocking downloaded files..." -Color White
+        Get-ChildItem -Path $installPath -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
 
         Write-ColorOutput "Download complete!" -Color Green
     }
