@@ -15,16 +15,23 @@
     Author: IT Infrastructure Team
     Requires: PowerShell 5.1+, Administrator privileges
     Logs: C:\VLABS\Maintenance\
+    Version: See $ToolboxVersion variable
 #>
 
 [CmdletBinding()]
 param(
     [switch]$AutoCleanup,
     [int]$DaysInactive = 30,
-    [switch]$DeepComponentCleanup
+    [switch]$DeepComponentCleanup,
+    [switch]$SkipUpdateCheck
 )
 
 #Requires -Version 5.1
+
+# Version information
+$script:ToolboxVersion = '1.0.0'
+$script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
+$script:ToolboxBranch = 'main'
 
 # Script root and module path
 $ScriptRoot = $PSScriptRoot
@@ -74,6 +81,105 @@ foreach ($module in $modules) {
         exit 1
     }
 }
+
+#region Update Management
+
+function Test-ToolboxUpdate {
+    <#
+    .SYNOPSIS
+        Checks if a newer version of the toolbox is available
+    #>
+    [CmdletBinding()]
+    param()
+
+    try {
+        # Enable TLS 1.2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+        # Get latest version from GitHub
+        $versionUrl = "https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/version.txt"
+        $latestVersion = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -TimeoutSec 5).Content.Trim()
+
+        # Compare versions
+        $current = [version]$script:ToolboxVersion
+        $latest = [version]$latestVersion
+
+        if ($latest -gt $current) {
+            return @{
+                UpdateAvailable = $true
+                CurrentVersion = $script:ToolboxVersion
+                LatestVersion = $latestVersion
+            }
+        }
+
+        return @{
+            UpdateAvailable = $false
+            CurrentVersion = $script:ToolboxVersion
+            LatestVersion = $latestVersion
+        }
+    }
+    catch {
+        # Silently fail - don't interrupt user if update check fails
+        return @{
+            UpdateAvailable = $false
+            CurrentVersion = $script:ToolboxVersion
+            LatestVersion = 'Unknown'
+            Error = $_.Exception.Message
+        }
+    }
+}
+
+function Invoke-ToolboxUpdate {
+    <#
+    .SYNOPSIS
+        Downloads and runs the latest installer
+    #>
+    [CmdletBinding()]
+    param()
+
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host " Update Available" -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    try {
+        # Enable TLS 1.2
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+        # Download and run installer
+        $installerUrl = "https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/install.ps1"
+
+        Write-Host "Downloading latest installer..." -ForegroundColor Cyan
+        $installerScript = Invoke-RestMethod -Uri $installerUrl -UseBasicParsing
+
+        Write-Host "Launching updater..." -ForegroundColor Cyan
+        Write-Host ""
+
+        # Save to temp file and execute
+        $tempInstaller = Join-Path $env:TEMP 'WinToolbox-Update.ps1'
+        $installerScript | Out-File -FilePath $tempInstaller -Encoding UTF8 -Force
+
+        # Launch installer and exit current instance
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempInstaller`"" -Verb RunAs
+
+        Write-Host "Update initiated. This window will now close." -ForegroundColor Green
+        Start-Sleep -Seconds 2
+        exit 0
+    }
+    catch {
+        Write-Host ""
+        Write-Host "ERROR: Failed to download update" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "You can manually update by running:" -ForegroundColor Cyan
+        Write-Host "  iex (irm https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/install.ps1)" -ForegroundColor White
+        Write-Host ""
+        Invoke-Pause
+    }
+}
+
+#endregion
 
 #region Prerequisites Check
 
@@ -129,9 +235,11 @@ function Show-MainMenu {
         '4' = 'Maintenance'
         '5' = 'View System Information'
         '6' = 'View Logs'
+        '7' = 'Check for Updates'
     }
 
-    $selection = Show-Menu -Title "Windows Management Toolbox" -Options $options
+    $title = "Windows Management Toolbox v$script:ToolboxVersion"
+    $selection = Show-Menu -Title $title -Options $options
     return $selection
 }
 
@@ -463,6 +571,35 @@ if (-not (Test-Prerequisites)) {
     exit 1
 }
 
+# Check for updates (unless skipped)
+if (-not $SkipUpdateCheck) {
+    $updateInfo = Test-ToolboxUpdate
+    if ($updateInfo.UpdateAvailable) {
+        Clear-Host
+        Write-Host ""
+        Write-Host "======================================" -ForegroundColor Cyan
+        Write-Host " Update Available" -ForegroundColor Cyan
+        Write-Host "======================================" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "A new version of Windows Management Toolbox is available!" -ForegroundColor White
+        Write-Host ""
+        Write-Host "  Current version: $($updateInfo.CurrentVersion)" -ForegroundColor Yellow
+        Write-Host "  Latest version:  $($updateInfo.LatestVersion)" -ForegroundColor Green
+        Write-Host ""
+
+        if (Show-Confirmation -Message "Would you like to update now?" -DefaultYes) {
+            Invoke-ToolboxUpdate
+            # If we reach here, update failed - continue with current version
+        }
+        else {
+            Write-Host ""
+            Write-Host "You can update later from the main menu (option 7)" -ForegroundColor Gray
+            Write-Host ""
+            Invoke-Pause
+        }
+    }
+}
+
 # Main menu loop
 $running = $true
 
@@ -496,6 +633,32 @@ while ($running) {
 
         '6' {
             Show-LogViewer
+        }
+
+        '7' {
+            # Check for updates
+            Write-Host ""
+            Write-Host "Checking for updates..." -ForegroundColor Cyan
+            $updateInfo = Test-ToolboxUpdate
+
+            if ($updateInfo.UpdateAvailable) {
+                Write-Host ""
+                Write-Host "Update available!" -ForegroundColor Green
+                Write-Host "  Current version: $($updateInfo.CurrentVersion)" -ForegroundColor Yellow
+                Write-Host "  Latest version:  $($updateInfo.LatestVersion)" -ForegroundColor Green
+                Write-Host ""
+
+                if (Show-Confirmation -Message "Would you like to update now?" -DefaultYes) {
+                    Invoke-ToolboxUpdate
+                    # If we reach here, update failed
+                }
+            }
+            else {
+                Write-Host ""
+                Write-Host "You're running the latest version ($($updateInfo.CurrentVersion))" -ForegroundColor Green
+                Write-Host ""
+                Invoke-Pause
+            }
         }
 
         'Q' {
