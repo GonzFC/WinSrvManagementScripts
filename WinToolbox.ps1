@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.3'
+$script:ToolboxVersion = '1.0.4'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -64,7 +64,7 @@ Write-Host "Loading modules..." -ForegroundColor White
 # Unblock all module files to prevent execution policy issues
 Get-ChildItem -Path $ModulePath -Filter "*.psm1" -File | Unblock-File -ErrorAction SilentlyContinue
 
-# Load all modules using DOT SOURCING instead of Import-Module
+# Load all modules by reading content and executing with Invoke-Expression
 # This ensures functions are loaded directly into the script's scope
 $modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance')
 
@@ -75,8 +75,10 @@ foreach ($module in $modules) {
         try {
             Write-Host "  Loading $module..." -NoNewline -ForegroundColor Gray
 
-            # DOT SOURCE the module file instead of using Import-Module
-            . $moduleFile
+            # Read the module content and execute it with Invoke-Expression
+            # This ensures the code runs in the current scope
+            $moduleContent = Get-Content -Path $moduleFile -Raw -ErrorAction Stop
+            Invoke-Expression $moduleContent -ErrorAction Stop
 
             # Verify the module loaded by checking for a known function
             $testFunction = switch ($module) {
@@ -100,6 +102,9 @@ foreach ($module in $modules) {
                 Write-Host "  File: $moduleFile" -ForegroundColor White
                 Write-Host "  Test Function: $testFunction" -ForegroundColor White
                 Write-Host ""
+                Write-Host "Available functions in current scope:" -ForegroundColor Yellow
+                Get-Command -CommandType Function | Where-Object { $_.Source -eq '' } | Select-Object -First 10 | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor White }
+                Write-Host ""
                 Write-Host "Press any key to exit..." -ForegroundColor Gray
                 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
                 exit 1
@@ -111,6 +116,7 @@ foreach ($module in $modules) {
             Write-Host "ERROR: Failed to load module $module" -ForegroundColor Red
             Write-Host "Module path: $moduleFile" -ForegroundColor Yellow
             Write-Host "Error: $_" -ForegroundColor Red
+            Write-Host "Error Line: $($_.InvocationInfo.ScriptLineNumber)" -ForegroundColor Red
             Write-Host ""
             Write-Host "Press any key to exit..." -ForegroundColor Gray
             $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
