@@ -534,8 +534,8 @@ function Dismount-UserHive {
 
 #endregion
 
-# Export functions
-Export-ModuleMember -Function @(
-    'Invoke-DiskSpaceReclamation',
-    'Disable-BackgroundsAndAnimations'
-)
+# Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
+# Export-ModuleMember -Function @(
+#     'Invoke-DiskSpaceReclamation',
+#     'Disable-BackgroundsAndAnimations'
+# )

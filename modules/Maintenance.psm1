@@ -692,9 +692,9 @@ function Apply-VMToolsPostInstall {
 
 #endregion
 
-# Export functions
-Export-ModuleMember -Function @(
-    'Install-DesktopInfoWidget',
-    'Invoke-TLSAndPowerShellUpgrade',
-    'Install-XenServerTools'
-)
+# Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
+# Export-ModuleMember -Function @(
+#     'Install-DesktopInfoWidget',
+#     'Invoke-TLSAndPowerShellUpgrade',
+#     'Install-XenServerTools'
+# )
