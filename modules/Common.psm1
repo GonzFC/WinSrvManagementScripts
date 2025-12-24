@@ -426,23 +426,23 @@ function Start-ServiceSafe {
 
 #endregion
 
-# Export module members
-Export-ModuleMember -Function @(
-    'Initialize-Logging',
-    'Write-LogMessage',
-    'Test-Administrator',
-    'Assert-Administrator',
-    'Test-PowerShellVersion',
-    'Enable-Tls12',
-    'Get-OSInfo',
-    'Test-WindowsServer',
-    'Test-WindowsClient',
-    'Show-Confirmation',
-    'Show-Menu',
-    'Invoke-Pause',
-    'Get-FreeSpaceGB',
-    'Get-DirectorySizeGB',
-    'Format-ByteSize',
-    'Stop-ServiceSafe',
-    'Start-ServiceSafe'
-)
+# Export module members (only used when loaded with Import-Module, not needed for dot-sourcing)
+# Export-ModuleMember -Function @(
+#     'Initialize-Logging',
+#     'Write-LogMessage',
+#     'Test-Administrator',
+#     'Assert-Administrator',
+#     'Test-PowerShellVersion',
+#     'Enable-Tls12',
+#     'Get-OSInfo',
+#     'Test-WindowsServer',
+#     'Test-WindowsClient',
+#     'Show-Confirmation',
+#     'Show-Menu',
+#     'Invoke-Pause',
+#     'Get-FreeSpaceGB',
+#     'Get-DirectorySizeGB',
+#     'Format-ByteSize',
+#     'Stop-ServiceSafe',
+#     'Start-ServiceSafe'
+# )

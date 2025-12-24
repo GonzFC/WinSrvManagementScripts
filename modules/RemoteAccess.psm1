@@ -340,8 +340,8 @@ function Install-JumpDesktopConnect {
 
 #endregion
 
-# Export functions
-Export-ModuleMember -Function @(
-    'Install-Tailscale',
-    'Install-JumpDesktopConnect'
-)
+# Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
+# Export-ModuleMember -Function @(
+#     'Install-Tailscale',
+#     'Install-JumpDesktopConnect'
+# )

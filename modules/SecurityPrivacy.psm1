@@ -103,7 +103,7 @@ function Set-EdgePrivacySettings {
 
 #endregion
 
-# Export functions
-Export-ModuleMember -Function @(
-    'Set-EdgePrivacySettings'
-)
+# Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
+# Export-ModuleMember -Function @(
+#     'Set-EdgePrivacySettings'
+# )
