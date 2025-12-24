@@ -52,7 +52,7 @@ foreach ($module in $modules) {
 
     if (Test-Path $moduleFile) {
         try {
-            Import-Module $moduleFile -Force -DisableNameChecking -ErrorAction Stop
+            Import-Module $moduleFile -Force -DisableNameChecking -Scope Global -ErrorAction Stop
         }
         catch {
             Write-Host ""
