@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.1'
+$script:ToolboxVersion = '1.0.2'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -64,7 +64,8 @@ Write-Host "Loading modules..." -ForegroundColor White
 # Unblock all module files to prevent execution policy issues
 Get-ChildItem -Path $ModulePath -Filter "*.psm1" -File | Unblock-File -ErrorAction SilentlyContinue
 
-# Import all modules
+# Load all modules using DOT SOURCING instead of Import-Module
+# This ensures functions are loaded directly into the script's scope
 $modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance')
 
 foreach ($module in $modules) {
@@ -74,8 +75,8 @@ foreach ($module in $modules) {
         try {
             Write-Host "  Loading $module..." -NoNewline -ForegroundColor Gray
 
-            # Import with explicit path and global scope
-            Import-Module $moduleFile -Force -DisableNameChecking -Scope Global -ErrorAction Stop
+            # DOT SOURCE the module file instead of using Import-Module
+            . $moduleFile
 
             # Verify the module loaded by checking for a known function
             $testFunction = switch ($module) {
@@ -98,9 +99,6 @@ foreach ($module in $modules) {
                 Write-Host "  Module: $module" -ForegroundColor White
                 Write-Host "  File: $moduleFile" -ForegroundColor White
                 Write-Host "  Test Function: $testFunction" -ForegroundColor White
-                Write-Host ""
-                Write-Host "Available Commands:" -ForegroundColor Yellow
-                Get-Command -Module $module | ForEach-Object { Write-Host "  - $($_.Name)" -ForegroundColor White }
                 Write-Host ""
                 Write-Host "Press any key to exit..." -ForegroundColor Gray
                 $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
