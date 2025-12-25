@@ -716,16 +716,18 @@ function Install-Winget {
     Write-LogMessage "Installing winget and dependencies..." -Level Info -Component 'Winget'
 
     try {
-        # Install App Installer (includes winget) from Microsoft Store
+        # Install App Installer (includes winget) from GitHub releases
         # This works on Windows 10 1809+ and Windows Server 2019+
 
         $progressPreference = 'SilentlyContinue'
+        Enable-Tls12
 
         # Download and install VCLibs dependency
         Write-Host "  Installing dependencies..." -ForegroundColor White
         $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
         $vcLibsPath = Join-Path $env:TEMP "Microsoft.VCLibs.x64.14.00.Desktop.appx"
 
+        Write-LogMessage "Downloading VCLibs from $vcLibsUrl" -Level Info -Component 'Winget'
         Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
         Add-AppxPackage -Path $vcLibsPath -ErrorAction SilentlyContinue
 
@@ -733,30 +735,53 @@ function Install-Winget {
         $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
         $uiXamlPath = Join-Path $env:TEMP "Microsoft.UI.Xaml.2.8.x64.appx"
 
+        Write-LogMessage "Downloading UI.Xaml from $uiXamlUrl" -Level Info -Component 'Winget'
         Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
         Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
 
-        # Download and install App Installer (winget)
-        Write-Host "  Installing winget..." -ForegroundColor White
-        $appInstallerUrl = "https://aka.ms/getwinget"
-        $appInstallerPath = Join-Path $env:TEMP "Microsoft.DesktopAppInstaller.msixbundle"
+        # Download and install App Installer (winget) from GitHub releases
+        Write-Host "  Downloading winget from GitHub..." -ForegroundColor White
 
+        # Get latest release info from GitHub API
+        $releasesUrl = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
+        $release = Invoke-RestMethod -Uri $releasesUrl -UseBasicParsing
+
+        # Find the .msixbundle asset
+        $asset = $release.assets | Where-Object { $_.name -like "*.msixbundle" } | Select-Object -First 1
+
+        if (-not $asset) {
+            # Fallback to known working version
+            Write-LogMessage "Could not find latest release, using fallback version" -Level Warning -Component 'Winget'
+            $appInstallerUrl = "https://github.com/microsoft/winget-cli/releases/download/v1.6.3482/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        } else {
+            $appInstallerUrl = $asset.browser_download_url
+        }
+
+        Write-Host "  Installing winget..." -ForegroundColor White
+        Write-LogMessage "Downloading winget from $appInstallerUrl" -Level Info -Component 'Winget'
+
+        $appInstallerPath = Join-Path $env:TEMP "Microsoft.DesktopAppInstaller.msixbundle"
         Invoke-WebRequest -Uri $appInstallerUrl -OutFile $appInstallerPath -UseBasicParsing
-        Add-AppxPackage -Path $appInstallerPath
+
+        Add-AppxPackage -Path $appInstallerPath -ErrorAction Stop
 
         # Cleanup
         Remove-Item -Path $vcLibsPath, $uiXamlPath, $appInstallerPath -Force -ErrorAction SilentlyContinue
 
-        # Verify installation
-        Start-Sleep -Seconds 2
+        # Verify installation and refresh PATH
+        Start-Sleep -Seconds 3
+
+        # Refresh environment variables
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
         $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
 
         if ($wingetCmd) {
             Write-Host "  winget installed successfully!" -ForegroundColor Green
-            Write-LogMessage "winget installed successfully" -Level Success -Component 'Winget'
+            Write-LogMessage "winget installed successfully at $($wingetCmd.Source)" -Level Success -Component 'Winget'
             return $true
         } else {
-            throw "winget installation verification failed"
+            throw "winget installation verification failed. Please restart PowerShell and try again."
         }
     }
     catch {
