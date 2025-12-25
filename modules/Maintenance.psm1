@@ -826,13 +826,16 @@ function Install-IPerf3 {
             New-Item -ItemType Directory -Path $installPath -Force | Out-Null
         }
 
-        # Download iperf3 for Windows (latest version from official source)
-        Write-Host "  Downloading iperf3 from iperf.fr..." -ForegroundColor White
-        $downloadUrl = 'https://iperf.fr/download/windows/iperf-3.1.3-win64.zip'
+        # Download iperf3 for Windows (using ar51an builds - statically linked, no dependencies)
+        Write-Host "  Downloading iperf3 (latest static build)..." -ForegroundColor White
+
+        # Use ar51an's iperf3 Windows builds - regularly updated, statically linked
+        # These don't require Visual C++ runtime or other dependencies
+        $downloadUrl = 'https://github.com/ar51an/iperf3-win-builds/releases/latest/download/iperf3-win64.zip'
         $zipPath = Join-Path $env:TEMP 'iperf3.zip'
         $extractPath = Join-Path $env:TEMP 'iperf3_extract'
 
-        Write-LogMessage "Downloading from $downloadUrl" -Level Info -Component 'NetworkSpeed'
+        Write-LogMessage "Downloading from $downloadUrl (ar51an static build)" -Level Info -Component 'NetworkSpeed'
         Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 
         # Extract ZIP
