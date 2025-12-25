@@ -1029,6 +1029,16 @@ function Invoke-NetworkSpeedTest {
 
             try {
                 $uploadJson = $uploadOutput | ConvertFrom-Json
+
+                # Log successful parse but check if data is present
+                if (-not $uploadJson.end.sum_sent) {
+                    Write-Host ""
+                    Write-Host "WARNING: Upload test returned unexpected data structure" -ForegroundColor Yellow
+                    Write-Host "Raw iperf3 output:" -ForegroundColor Gray
+                    Write-Host $uploadOutput -ForegroundColor White
+                    Write-LogMessage "Upload data structure unexpected" -Level Warning -Component 'NetworkSpeed'
+                    Write-LogMessage "Upload raw output: $uploadOutput" -Level Info -Component 'NetworkSpeed'
+                }
             }
             catch {
                 Write-Host ""
@@ -1039,7 +1049,7 @@ function Invoke-NetworkSpeedTest {
                 Write-LogMessage "Upload raw output: $uploadOutput" -Level Info -Component 'NetworkSpeed'
             }
 
-            if ($uploadJson -and $uploadJson.end.sum_sent) {
+            if ($uploadJson -and $uploadJson.end -and $uploadJson.end.sum_sent) {
                 $uploadBandwidth = [math]::Round($uploadJson.end.sum_sent.bits_per_second / 1000000, 2)
                 $uploadData = Format-ByteSize $uploadJson.end.sum_sent.bytes
                 $uploadRetrans = $uploadJson.end.sum_sent.retransmits
@@ -1056,6 +1066,16 @@ function Invoke-NetworkSpeedTest {
             # Parse download results
             try {
                 $downloadJson = $downloadOutput | ConvertFrom-Json
+
+                # Log successful parse but check if data is present
+                if (-not $downloadJson.end.sum_received) {
+                    Write-Host ""
+                    Write-Host "WARNING: Download test returned unexpected data structure" -ForegroundColor Yellow
+                    Write-Host "Raw iperf3 output:" -ForegroundColor Gray
+                    Write-Host $downloadOutput -ForegroundColor White
+                    Write-LogMessage "Download data structure unexpected" -Level Warning -Component 'NetworkSpeed'
+                    Write-LogMessage "Download raw output: $downloadOutput" -Level Info -Component 'NetworkSpeed'
+                }
             }
             catch {
                 Write-Host ""
@@ -1066,7 +1086,7 @@ function Invoke-NetworkSpeedTest {
                 Write-LogMessage "Download raw output: $downloadOutput" -Level Info -Component 'NetworkSpeed'
             }
 
-            if ($downloadJson -and $downloadJson.end.sum_received) {
+            if ($downloadJson -and $downloadJson.end -and $downloadJson.end.sum_received) {
                 $downloadBandwidth = [math]::Round($downloadJson.end.sum_received.bits_per_second / 1000000, 2)
                 $downloadData = Format-ByteSize $downloadJson.end.sum_received.bytes
 
