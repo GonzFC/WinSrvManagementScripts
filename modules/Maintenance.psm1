@@ -876,13 +876,27 @@ function Install-IPerf3 {
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
 
         # Find and copy iperf3.exe
+        Write-LogMessage "Searching for iperf3.exe in $extractPath" -Level Info -Component 'NetworkSpeed'
+
+        # List all files found for debugging
+        $allFiles = Get-ChildItem -Path $extractPath -Recurse -ErrorAction SilentlyContinue
+        Write-LogMessage "Files found in archive: $($allFiles.Name -join ', ')" -Level Info -Component 'NetworkSpeed'
+
         $extractedExe = Get-ChildItem -Path $extractPath -Filter "iperf3.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
 
         if ($extractedExe) {
+            Write-LogMessage "Found iperf3.exe at: $($extractedExe.FullName)" -Level Info -Component 'NetworkSpeed'
             Copy-Item -Path $extractedExe.FullName -Destination $iperf3Exe -Force
             Write-Host "  iperf3 installed successfully!" -ForegroundColor Green
             Write-LogMessage "iperf3 installed to $iperf3Exe" -Level Success -Component 'NetworkSpeed'
+
+            # Verify the copied file
+            if (Test-Path $iperf3Exe) {
+                $fileInfo = Get-Item $iperf3Exe
+                Write-LogMessage "Installed file size: $($fileInfo.Length) bytes" -Level Info -Component 'NetworkSpeed'
+            }
         } else {
+            Write-LogMessage "ERROR: Could not find iperf3.exe in archive. Files found: $($allFiles.Name -join ', ')" -Level Error -Component 'NetworkSpeed'
             throw "Could not find iperf3.exe in downloaded archive"
         }
 
@@ -1019,18 +1033,43 @@ function Invoke-NetworkSpeedTest {
 
         # Test if iperf3 actually works
         Write-Host "  Testing iperf3 executable..." -ForegroundColor Gray
-        $versionTest = & $iperf3Cmd --version 2>&1 | Out-String
-        Write-LogMessage "iperf3 version test output: $versionTest" -Level Info -Component 'NetworkSpeed'
 
-        if ([string]::IsNullOrWhiteSpace($versionTest)) {
-            Write-Host ""
-            Write-Host "ERROR: iperf3 executable does not run properly" -ForegroundColor Red
-            Write-Host "Path: $iperf3Cmd" -ForegroundColor Yellow
-            Write-Host "This may indicate missing dependencies or a corrupted download." -ForegroundColor Yellow
-            throw "iperf3 executable test failed - no output from --version"
+        try {
+            $versionTest = & $iperf3Cmd --version 2>&1
+            $versionOutput = $versionTest | Out-String
+
+            Write-LogMessage "iperf3 version test raw output: $versionOutput" -Level Info -Component 'NetworkSpeed'
+            Write-LogMessage "iperf3 version test object type: $($versionTest.GetType().Name)" -Level Info -Component 'NetworkSpeed'
+
+            if ([string]::IsNullOrWhiteSpace($versionOutput)) {
+                Write-Host ""
+                Write-Host "ERROR: iperf3 executable does not run properly (no output)" -ForegroundColor Red
+                Write-Host "Path: $iperf3Cmd" -ForegroundColor Yellow
+                Write-Host "This may indicate missing dependencies." -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "Try running manually in PowerShell:" -ForegroundColor Cyan
+                Write-Host "  & '$iperf3Cmd' --version" -ForegroundColor White
+                Write-Host ""
+                throw "iperf3 executable test failed - no output from --version"
+            }
+
+            # Check if there's an error in the output
+            if ($versionOutput -match "error|exception|cannot|denied") {
+                Write-Host ""
+                Write-Host "ERROR: iperf3 returned an error:" -ForegroundColor Red
+                Write-Host $versionOutput -ForegroundColor Yellow
+                throw "iperf3 executable test failed - error in output"
+            }
+
+            Write-Host "  iperf3 version: $($versionOutput.Split("`n")[0].Trim())" -ForegroundColor Green
         }
-
-        Write-Host "  iperf3 version: $($versionTest.Split("`n")[0].Trim())" -ForegroundColor Green
+        catch {
+            Write-LogMessage "iperf3 version test exception: $_" -Level Error -Component 'NetworkSpeed'
+            Write-Host ""
+            Write-Host "ERROR: Exception when testing iperf3:" -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Yellow
+            throw
+        }
 
         # Test 1: Upload (client to server)
         Write-Host "Test 1/2: Upload Speed Test" -ForegroundColor Cyan
