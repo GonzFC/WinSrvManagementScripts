@@ -986,6 +986,21 @@ function Invoke-NetworkSpeedTest {
 
         Write-LogMessage "Using iperf3 at: $iperf3Cmd" -Level Info -Component 'NetworkSpeed'
 
+        # Test if iperf3 actually works
+        Write-Host "  Testing iperf3 executable..." -ForegroundColor Gray
+        $versionTest = & $iperf3Cmd --version 2>&1 | Out-String
+        Write-LogMessage "iperf3 version test output: $versionTest" -Level Info -Component 'NetworkSpeed'
+
+        if ([string]::IsNullOrWhiteSpace($versionTest)) {
+            Write-Host ""
+            Write-Host "ERROR: iperf3 executable does not run properly" -ForegroundColor Red
+            Write-Host "Path: $iperf3Cmd" -ForegroundColor Yellow
+            Write-Host "This may indicate missing dependencies or a corrupted download." -ForegroundColor Yellow
+            throw "iperf3 executable test failed - no output from --version"
+        }
+
+        Write-Host "  iperf3 version: $($versionTest.Split("`n")[0].Trim())" -ForegroundColor Green
+
         # Test 1: Upload (client to server)
         Write-Host "Test 1/2: Upload Speed Test" -ForegroundColor Cyan
         Write-Host "-----------------------------------" -ForegroundColor Gray
