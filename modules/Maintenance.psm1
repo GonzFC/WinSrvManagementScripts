@@ -691,9 +691,324 @@ function Apply-VMToolsPostInstall {
 
 #endregion
 
+#region Network Speed Testing
+
+<#
+.SYNOPSIS
+    Ensures winget is installed and up-to-date
+#>
+function Install-Winget {
+    [CmdletBinding()]
+    param()
+
+    Write-LogMessage "Checking winget installation..." -Level Info -Component 'Winget'
+
+    # Check if winget is already available
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+
+    if ($wingetCmd) {
+        Write-LogMessage "winget is already installed" -Level Info -Component 'Winget'
+        Write-Host "  winget is already installed" -ForegroundColor Green
+        return $true
+    }
+
+    Write-Host "  winget not found, installing..." -ForegroundColor Yellow
+    Write-LogMessage "Installing winget and dependencies..." -Level Info -Component 'Winget'
+
+    try {
+        # Install App Installer (includes winget) from Microsoft Store
+        # This works on Windows 10 1809+ and Windows Server 2019+
+
+        $progressPreference = 'SilentlyContinue'
+
+        # Download and install VCLibs dependency
+        Write-Host "  Installing dependencies..." -ForegroundColor White
+        $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        $vcLibsPath = Join-Path $env:TEMP "Microsoft.VCLibs.x64.14.00.Desktop.appx"
+
+        Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
+        Add-AppxPackage -Path $vcLibsPath -ErrorAction SilentlyContinue
+
+        # Download and install UI.Xaml dependency
+        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
+        $uiXamlPath = Join-Path $env:TEMP "Microsoft.UI.Xaml.2.8.x64.appx"
+
+        Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
+        Add-AppxPackage -Path $uiXamlPath -ErrorAction SilentlyContinue
+
+        # Download and install App Installer (winget)
+        Write-Host "  Installing winget..." -ForegroundColor White
+        $appInstallerUrl = "https://aka.ms/getwinget"
+        $appInstallerPath = Join-Path $env:TEMP "Microsoft.DesktopAppInstaller.msixbundle"
+
+        Invoke-WebRequest -Uri $appInstallerUrl -OutFile $appInstallerPath -UseBasicParsing
+        Add-AppxPackage -Path $appInstallerPath
+
+        # Cleanup
+        Remove-Item -Path $vcLibsPath, $uiXamlPath, $appInstallerPath -Force -ErrorAction SilentlyContinue
+
+        # Verify installation
+        Start-Sleep -Seconds 2
+        $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+
+        if ($wingetCmd) {
+            Write-Host "  winget installed successfully!" -ForegroundColor Green
+            Write-LogMessage "winget installed successfully" -Level Success -Component 'Winget'
+            return $true
+        } else {
+            throw "winget installation verification failed"
+        }
+    }
+    catch {
+        Write-LogMessage "Failed to install winget: $_" -Level Error -Component 'Winget'
+        Write-Host "  ERROR: Failed to install winget" -ForegroundColor Red
+        Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Ensures iperf3 is installed via winget
+#>
+function Install-IPerf3 {
+    [CmdletBinding()]
+    param()
+
+    Write-LogMessage "Checking iperf3 installation..." -Level Info -Component 'NetworkSpeed'
+
+    # Check if iperf3 is already available
+    $iperf3Cmd = Get-Command iperf3 -ErrorAction SilentlyContinue
+
+    if ($iperf3Cmd) {
+        Write-LogMessage "iperf3 is already installed" -Level Info -Component 'NetworkSpeed'
+        Write-Host "  iperf3 is already installed" -ForegroundColor Green
+        return $true
+    }
+
+    Write-Host "  iperf3 not found, installing via winget..." -ForegroundColor Yellow
+    Write-LogMessage "Installing iperf3 via winget..." -Level Info -Component 'NetworkSpeed'
+
+    try {
+        # Install iperf3 using winget
+        $result = winget install --id=iperf3.iperf3 --silent --accept-package-agreements --accept-source-agreements 2>&1
+
+        # Refresh environment variables to pick up new PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+        # Verify installation
+        Start-Sleep -Seconds 2
+        $iperf3Cmd = Get-Command iperf3 -ErrorAction SilentlyContinue
+
+        if ($iperf3Cmd) {
+            Write-Host "  iperf3 installed successfully!" -ForegroundColor Green
+            Write-LogMessage "iperf3 installed successfully at $($iperf3Cmd.Source)" -Level Success -Component 'NetworkSpeed'
+            return $true
+        } else {
+            throw "iperf3 installation verification failed. Please restart PowerShell and try again."
+        }
+    }
+    catch {
+        Write-LogMessage "Failed to install iperf3: $_" -Level Error -Component 'NetworkSpeed'
+        Write-Host "  ERROR: Failed to install iperf3" -ForegroundColor Red
+        Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+<#
+.SYNOPSIS
+    Runs comprehensive network speed test with bidirectional testing
+#>
+function Invoke-NetworkSpeedTest {
+    [CmdletBinding()]
+    param()
+
+    Write-LogMessage "Starting network speed test wizard..." -Level Info -Component 'NetworkSpeed'
+
+    # Ensure winget is installed
+    Write-Host ""
+    Write-Host "Preparing network testing tools..." -ForegroundColor Cyan
+
+    if (-not (Install-Winget)) {
+        throw "Failed to install winget. Cannot proceed with network speed test."
+    }
+
+    if (-not (Install-IPerf3)) {
+        throw "Failed to install iperf3. Cannot proceed with network speed test."
+    }
+
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host " Network Speed Test" -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Step 1: Ask test mode
+    Write-Host "Test Mode:" -ForegroundColor Yellow
+    Write-Host "  [1] Peer to Peer (both systems run this tool)" -ForegroundColor White
+    Write-Host "  [2] Peer to Internet (test to public server)" -ForegroundColor White
+    Write-Host ""
+    Write-Host -NoNewline "Select mode [1 or 2]: " -ForegroundColor Cyan
+    $modeChoice = Read-Host
+
+    $peerToPeer = ($modeChoice -eq '1')
+    $serverAddress = $null
+
+    if ($peerToPeer) {
+        Write-Host ""
+        Write-Host -NoNewline "Enter peer IP address: " -ForegroundColor Cyan
+        $serverAddress = Read-Host
+
+        if ([string]::IsNullOrWhiteSpace($serverAddress)) {
+            throw "Peer IP address is required for peer to peer testing"
+        }
+    } else {
+        # Use public iperf3 server
+        $serverAddress = "ping.online.net"  # Reliable public iperf3 server
+        Write-Host ""
+        Write-Host "Using public test server: $serverAddress" -ForegroundColor Green
+    }
+
+    # Step 2: Ask test duration preset
+    Write-Host ""
+    Write-Host "Test Duration:" -ForegroundColor Yellow
+    Write-Host "  [1] Quick Test (5 seconds)" -ForegroundColor White
+    Write-Host "  [2] Standard Test (10 seconds)" -ForegroundColor White
+    Write-Host "  [3] Extended Test (30 seconds)" -ForegroundColor White
+    Write-Host ""
+    Write-Host -NoNewline "Select duration [1, 2, or 3]: " -ForegroundColor Cyan
+    $durationChoice = Read-Host
+
+    $duration = switch ($durationChoice) {
+        '1' { 5 }
+        '2' { 10 }
+        '3' { 30 }
+        default { 10 }
+    }
+
+    $durationLabel = switch ($durationChoice) {
+        '1' { "Quick" }
+        '2' { "Standard" }
+        '3' { "Extended" }
+        default { "Standard" }
+    }
+
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host " Running $durationLabel Test" -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Configuration:" -ForegroundColor Yellow
+    Write-Host "  Mode:     $(if ($peerToPeer) { 'Peer to Peer' } else { 'Internet Test' })" -ForegroundColor White
+    Write-Host "  Server:   $serverAddress" -ForegroundColor White
+    Write-Host "  Duration: $duration seconds" -ForegroundColor White
+    Write-Host "  Protocol: TCP (bidirectional)" -ForegroundColor White
+    Write-Host ""
+
+    Write-LogMessage "Test config: Mode=$(if ($peerToPeer) { 'P2P' } else { 'Internet' }), Server=$serverAddress, Duration=$duration" -Level Info -Component 'NetworkSpeed'
+
+    # Run bidirectional tests
+    try {
+        # Test 1: Upload (client to server)
+        Write-Host "Test 1/2: Upload Speed Test" -ForegroundColor Cyan
+        Write-Host "-----------------------------------" -ForegroundColor Gray
+
+        $uploadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-P', '4')
+        $uploadOutput = & iperf3 $uploadArgs 2>&1 | Out-String
+
+        # Test 2: Download (server to client, reverse mode)
+        Write-Host ""
+        Write-Host "Test 2/2: Download Speed Test" -ForegroundColor Cyan
+        Write-Host "-----------------------------------" -ForegroundColor Gray
+
+        $downloadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-R', '-P', '4')
+        $downloadOutput = & iperf3 $downloadArgs 2>&1 | Out-String
+
+        # Parse and display results
+        Write-Host ""
+        Write-Host "======================================" -ForegroundColor Green
+        Write-Host " Test Results" -ForegroundColor Green
+        Write-Host "======================================" -ForegroundColor Green
+        Write-Host ""
+
+        try {
+            # Parse upload results
+            $uploadJson = $uploadOutput | ConvertFrom-Json
+            if ($uploadJson.end.sum_sent) {
+                $uploadBandwidth = [math]::Round($uploadJson.end.sum_sent.bits_per_second / 1000000, 2)
+                $uploadData = Format-ByteSize $uploadJson.end.sum_sent.bytes
+                $uploadRetrans = $uploadJson.end.sum_sent.retransmits
+
+                Write-Host "Upload Performance:" -ForegroundColor Yellow
+                Write-Host "  Bandwidth:    $uploadBandwidth Mbps" -ForegroundColor White
+                Write-Host "  Data Sent:    $uploadData" -ForegroundColor White
+                Write-Host "  Retransmits:  $uploadRetrans" -ForegroundColor White
+                Write-Host ""
+
+                Write-LogMessage "Upload: $uploadBandwidth Mbps, Retransmits: $uploadRetrans" -Level Success -Component 'NetworkSpeed'
+            }
+
+            # Parse download results
+            $downloadJson = $downloadOutput | ConvertFrom-Json
+            if ($downloadJson.end.sum_received) {
+                $downloadBandwidth = [math]::Round($downloadJson.end.sum_received.bits_per_second / 1000000, 2)
+                $downloadData = Format-ByteSize $downloadJson.end.sum_received.bytes
+
+                Write-Host "Download Performance:" -ForegroundColor Yellow
+                Write-Host "  Bandwidth:    $downloadBandwidth Mbps" -ForegroundColor White
+                Write-Host "  Data Received: $downloadData" -ForegroundColor White
+                Write-Host ""
+
+                Write-LogMessage "Download: $downloadBandwidth Mbps" -Level Success -Component 'NetworkSpeed'
+            }
+
+            # Summary for admins
+            Write-Host "Summary for Network Analysis:" -ForegroundColor Cyan
+            Write-Host "  Upload:       $uploadBandwidth Mbps" -ForegroundColor White
+            Write-Host "  Download:     $downloadBandwidth Mbps" -ForegroundColor White
+
+            $avgBandwidth = [math]::Round(($uploadBandwidth + $downloadBandwidth) / 2, 2)
+            Write-Host "  Average:      $avgBandwidth Mbps" -ForegroundColor White
+
+            if ($uploadRetrans -gt 0) {
+                Write-Host "  Note: $uploadRetrans retransmissions detected (may indicate network congestion)" -ForegroundColor Yellow
+            } else {
+                Write-Host "  Quality: Excellent (no retransmissions)" -ForegroundColor Green
+            }
+            Write-Host ""
+
+        }
+        catch {
+            Write-Host "Note: Could not parse detailed results" -ForegroundColor Yellow
+            Write-Host "Raw output available in logs" -ForegroundColor Gray
+            Write-LogMessage "Result parsing failed: $_" -Level Warning -Component 'NetworkSpeed'
+        }
+
+        Write-Host "Network speed test completed successfully!" -ForegroundColor Green
+        Write-Host ""
+
+        if ($peerToPeer) {
+            Write-Host "Tip: Run the same test on your peer for complete bidirectional analysis" -ForegroundColor Cyan
+            Write-Host ""
+        }
+    }
+    catch {
+        Write-LogMessage "Network speed test failed: $_" -Level Error -Component 'NetworkSpeed'
+        Write-Host ""
+        Write-Host "ERROR: Network speed test failed" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+        Write-Host ""
+        throw
+    }
+}
+
+#endregion
+
 # Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
 # Export-ModuleMember -Function @(
 #     'Install-DesktopInfoWidget',
 #     'Invoke-TLSAndPowerShellUpgrade',
-#     'Install-XenServerTools'
+#     'Install-XenServerTools',
+#     'Invoke-NetworkSpeedTest'
 # )

@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.5'
+$script:ToolboxVersion = '1.0.6'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -89,7 +89,7 @@ foreach ($module in $modules) {
                 'SystemOptimization' { 'Invoke-DiskSpaceReclamation' }
                 'SecurityPrivacy' { 'Set-EdgePrivacySettings' }
                 'RemoteAccess' { 'Install-Tailscale' }
-                'Maintenance' { 'Install-XenServerTools' }
+                'Maintenance' { 'Invoke-NetworkSpeedTest' }
             }
 
             if (Get-Command $testFunction -ErrorAction SilentlyContinue) {
@@ -291,9 +291,10 @@ function Show-MainMenu {
         '2' = 'Remote Access'
         '3' = 'Security & Privacy'
         '4' = 'Maintenance'
-        '5' = 'View System Information'
-        '6' = 'View Logs'
-        '7' = 'Check for Updates'
+        '5' = 'Performance'
+        '6' = 'View System Information'
+        '7' = 'View Logs'
+        '8' = 'Check for Updates'
     }
 
     $title = "Windows Management Toolbox v$script:ToolboxVersion"
@@ -500,6 +501,33 @@ function Show-MaintenanceMenu {
     return 'CONTINUE'
 }
 
+function Show-PerformanceMenu {
+    $options = [ordered]@{
+        '1' = 'Network Speed Test (iperf3)'
+    }
+
+    $selection = Show-Menu -Title "Performance" -Options $options -AllowBack
+
+    switch ($selection) {
+        '1' {
+            try {
+                Invoke-NetworkSpeedTest
+                Invoke-Pause
+            }
+            catch {
+                Write-Host ""
+                Write-Host "Network speed test failed. Check logs for details." -ForegroundColor Red
+                Invoke-Pause
+            }
+        }
+
+        'B' { return 'BACK' }
+        'Q' { return 'QUIT' }
+    }
+
+    return 'CONTINUE'
+}
+
 function Show-SystemInformation {
     Clear-Host
     Write-Host ""
@@ -686,14 +714,19 @@ while ($running) {
         }
 
         '5' {
-            Show-SystemInformation
+            $result = Show-PerformanceMenu
+            if ($result -eq 'QUIT') { $running = $false }
         }
 
         '6' {
-            Show-LogViewer
+            Show-SystemInformation
         }
 
         '7' {
+            Show-LogViewer
+        }
+
+        '8' {
             # Check for updates
             Write-Host ""
             Write-Host "Checking for updates..." -ForegroundColor Cyan
