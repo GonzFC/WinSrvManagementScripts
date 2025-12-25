@@ -975,13 +975,24 @@ function Invoke-NetworkSpeedTest {
 
     # Run bidirectional tests
     try {
+        # Determine iperf3 command to use
+        $iperf3Cmd = if (Test-Path $iperf3Path) {
+            $iperf3Path
+        } elseif (Get-Command iperf3 -ErrorAction SilentlyContinue) {
+            'iperf3'
+        } else {
+            throw "iperf3 not found at $iperf3Path and not in PATH"
+        }
+
+        Write-LogMessage "Using iperf3 at: $iperf3Cmd" -Level Info -Component 'NetworkSpeed'
+
         # Test 1: Upload (client to server)
         Write-Host "Test 1/2: Upload Speed Test" -ForegroundColor Cyan
         Write-Host "-----------------------------------" -ForegroundColor Gray
         Write-Host "  Connecting to $serverAddress..." -ForegroundColor Gray
 
         $uploadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-P', '4')
-        $uploadOutput = & iperf3 $uploadArgs 2>&1 | Out-String
+        $uploadOutput = & $iperf3Cmd $uploadArgs 2>&1 | Out-String
 
         # Check if we got an error
         if ($uploadOutput -match 'error|unable to connect|connection refused|No route to host') {
@@ -1000,7 +1011,7 @@ function Invoke-NetworkSpeedTest {
         Write-Host "  Connecting to $serverAddress..." -ForegroundColor Gray
 
         $downloadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-R', '-P', '4')
-        $downloadOutput = & iperf3 $downloadArgs 2>&1 | Out-String
+        $downloadOutput = & $iperf3Cmd $downloadArgs 2>&1 | Out-String
 
         # Check if we got an error
         if ($downloadOutput -match 'error|unable to connect|connection refused|No route to host') {
