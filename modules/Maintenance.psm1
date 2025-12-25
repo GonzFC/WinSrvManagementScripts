@@ -794,7 +794,7 @@ function Install-Winget {
 
 <#
 .SYNOPSIS
-    Ensures iperf3 is installed via winget
+    Ensures iperf3 is installed (direct download method)
 #>
 function Install-IPerf3 {
     [CmdletBinding()]
@@ -806,38 +806,81 @@ function Install-IPerf3 {
     $iperf3Cmd = Get-Command iperf3 -ErrorAction SilentlyContinue
 
     if ($iperf3Cmd) {
-        Write-LogMessage "iperf3 is already installed" -Level Info -Component 'NetworkSpeed'
+        Write-LogMessage "iperf3 is already installed at $($iperf3Cmd.Source)" -Level Info -Component 'NetworkSpeed'
         Write-Host "  iperf3 is already installed" -ForegroundColor Green
-        return $true
+        return $iperf3Cmd.Source
     }
 
-    Write-Host "  iperf3 not found, installing via winget..." -ForegroundColor Yellow
-    Write-LogMessage "Installing iperf3 via winget..." -Level Info -Component 'NetworkSpeed'
+    Write-Host "  iperf3 not found, installing..." -ForegroundColor Yellow
+    Write-LogMessage "Installing iperf3..." -Level Info -Component 'NetworkSpeed'
 
     try {
-        # Install iperf3 using winget
-        $result = winget install --id=iperf3.iperf3 --silent --accept-package-agreements --accept-source-agreements 2>&1
+        Enable-Tls12
 
-        # Refresh environment variables to pick up new PATH
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+        # Install iperf3 to ProgramData (persistent location)
+        $installPath = Join-Path $env:ProgramData 'iperf3'
+        $iperf3Exe = Join-Path $installPath 'iperf3.exe'
 
-        # Verify installation
-        Start-Sleep -Seconds 2
-        $iperf3Cmd = Get-Command iperf3 -ErrorAction SilentlyContinue
-
-        if ($iperf3Cmd) {
-            Write-Host "  iperf3 installed successfully!" -ForegroundColor Green
-            Write-LogMessage "iperf3 installed successfully at $($iperf3Cmd.Source)" -Level Success -Component 'NetworkSpeed'
-            return $true
-        } else {
-            throw "iperf3 installation verification failed. Please restart PowerShell and try again."
+        # Create installation directory
+        if (-not (Test-Path $installPath)) {
+            New-Item -ItemType Directory -Path $installPath -Force | Out-Null
         }
+
+        # Download iperf3 for Windows (latest version from official source)
+        Write-Host "  Downloading iperf3 from iperf.fr..." -ForegroundColor White
+        $downloadUrl = 'https://iperf.fr/download/windows/iperf-3.1.3-win64.zip'
+        $zipPath = Join-Path $env:TEMP 'iperf3.zip'
+        $extractPath = Join-Path $env:TEMP 'iperf3_extract'
+
+        Write-LogMessage "Downloading from $downloadUrl" -Level Info -Component 'NetworkSpeed'
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
+
+        # Extract ZIP
+        Write-Host "  Extracting iperf3..." -ForegroundColor White
+        if (Test-Path $extractPath) {
+            Remove-Item -Path $extractPath -Recurse -Force
+        }
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
+
+        # Find and copy iperf3.exe
+        $extractedExe = Get-ChildItem -Path $extractPath -Filter "iperf3.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+
+        if ($extractedExe) {
+            Copy-Item -Path $extractedExe.FullName -Destination $iperf3Exe -Force
+            Write-Host "  iperf3 installed successfully!" -ForegroundColor Green
+            Write-LogMessage "iperf3 installed to $iperf3Exe" -Level Success -Component 'NetworkSpeed'
+        } else {
+            throw "Could not find iperf3.exe in downloaded archive"
+        }
+
+        # Cleanup
+        Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Add to system PATH permanently if not already there
+        $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ($machinePath -notlike "*$installPath*") {
+            try {
+                [System.Environment]::SetEnvironmentVariable("Path", "$machinePath;$installPath", "Machine")
+                Write-LogMessage "Added iperf3 to system PATH" -Level Info -Component 'NetworkSpeed'
+            }
+            catch {
+                Write-LogMessage "Could not add to system PATH (requires admin): $_" -Level Warning -Component 'NetworkSpeed'
+            }
+        }
+
+        # Add to current session PATH
+        $env:Path = "$installPath;$env:Path"
+
+        return $iperf3Exe
     }
     catch {
         Write-LogMessage "Failed to install iperf3: $_" -Level Error -Component 'NetworkSpeed'
         Write-Host "  ERROR: Failed to install iperf3" -ForegroundColor Red
         Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
-        return $false
+        throw
     }
 }
 
@@ -851,15 +894,12 @@ function Invoke-NetworkSpeedTest {
 
     Write-LogMessage "Starting network speed test wizard..." -Level Info -Component 'NetworkSpeed'
 
-    # Ensure winget is installed
+    # Ensure iperf3 is installed
     Write-Host ""
     Write-Host "Preparing network testing tools..." -ForegroundColor Cyan
 
-    if (-not (Install-Winget)) {
-        throw "Failed to install winget. Cannot proceed with network speed test."
-    }
-
-    if (-not (Install-IPerf3)) {
+    $iperf3Path = Install-IPerf3
+    if (-not $iperf3Path) {
         throw "Failed to install iperf3. Cannot proceed with network speed test."
     }
 
