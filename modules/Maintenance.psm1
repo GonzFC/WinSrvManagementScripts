@@ -978,17 +978,39 @@ function Invoke-NetworkSpeedTest {
         # Test 1: Upload (client to server)
         Write-Host "Test 1/2: Upload Speed Test" -ForegroundColor Cyan
         Write-Host "-----------------------------------" -ForegroundColor Gray
+        Write-Host "  Connecting to $serverAddress..." -ForegroundColor Gray
 
         $uploadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-P', '4')
         $uploadOutput = & iperf3 $uploadArgs 2>&1 | Out-String
+
+        # Check if we got an error
+        if ($uploadOutput -match 'error|unable to connect|connection refused|No route to host') {
+            Write-Host ""
+            Write-Host "ERROR: Upload test failed" -ForegroundColor Red
+            Write-Host $uploadOutput -ForegroundColor Yellow
+            throw "Upload test failed: Server not reachable or connection refused"
+        }
+
+        Write-Host "  Upload test completed" -ForegroundColor Green
 
         # Test 2: Download (server to client, reverse mode)
         Write-Host ""
         Write-Host "Test 2/2: Download Speed Test" -ForegroundColor Cyan
         Write-Host "-----------------------------------" -ForegroundColor Gray
+        Write-Host "  Connecting to $serverAddress..." -ForegroundColor Gray
 
         $downloadArgs = @('-c', $serverAddress, '-t', $duration, '-J', '-R', '-P', '4')
         $downloadOutput = & iperf3 $downloadArgs 2>&1 | Out-String
+
+        # Check if we got an error
+        if ($downloadOutput -match 'error|unable to connect|connection refused|No route to host') {
+            Write-Host ""
+            Write-Host "ERROR: Download test failed" -ForegroundColor Red
+            Write-Host $downloadOutput -ForegroundColor Yellow
+            throw "Download test failed: Server not reachable or connection refused"
+        }
+
+        Write-Host "  Download test completed" -ForegroundColor Green
 
         # Parse and display results
         Write-Host ""
@@ -999,8 +1021,25 @@ function Invoke-NetworkSpeedTest {
 
         try {
             # Parse upload results
-            $uploadJson = $uploadOutput | ConvertFrom-Json
-            if ($uploadJson.end.sum_sent) {
+            $uploadJson = $null
+            $downloadJson = $null
+            $uploadBandwidth = 0
+            $downloadBandwidth = 0
+            $uploadRetrans = 0
+
+            try {
+                $uploadJson = $uploadOutput | ConvertFrom-Json
+            }
+            catch {
+                Write-Host ""
+                Write-Host "WARNING: Could not parse upload test results" -ForegroundColor Yellow
+                Write-Host "Raw iperf3 output:" -ForegroundColor Gray
+                Write-Host $uploadOutput -ForegroundColor White
+                Write-LogMessage "Upload JSON parse failed: $_" -Level Warning -Component 'NetworkSpeed'
+                Write-LogMessage "Upload raw output: $uploadOutput" -Level Info -Component 'NetworkSpeed'
+            }
+
+            if ($uploadJson -and $uploadJson.end.sum_sent) {
                 $uploadBandwidth = [math]::Round($uploadJson.end.sum_sent.bits_per_second / 1000000, 2)
                 $uploadData = Format-ByteSize $uploadJson.end.sum_sent.bytes
                 $uploadRetrans = $uploadJson.end.sum_sent.retransmits
@@ -1015,8 +1054,19 @@ function Invoke-NetworkSpeedTest {
             }
 
             # Parse download results
-            $downloadJson = $downloadOutput | ConvertFrom-Json
-            if ($downloadJson.end.sum_received) {
+            try {
+                $downloadJson = $downloadOutput | ConvertFrom-Json
+            }
+            catch {
+                Write-Host ""
+                Write-Host "WARNING: Could not parse download test results" -ForegroundColor Yellow
+                Write-Host "Raw iperf3 output:" -ForegroundColor Gray
+                Write-Host $downloadOutput -ForegroundColor White
+                Write-LogMessage "Download JSON parse failed: $_" -Level Warning -Component 'NetworkSpeed'
+                Write-LogMessage "Download raw output: $downloadOutput" -Level Info -Component 'NetworkSpeed'
+            }
+
+            if ($downloadJson -and $downloadJson.end.sum_received) {
                 $downloadBandwidth = [math]::Round($downloadJson.end.sum_received.bits_per_second / 1000000, 2)
                 $downloadData = Format-ByteSize $downloadJson.end.sum_received.bytes
 
@@ -1029,25 +1079,34 @@ function Invoke-NetworkSpeedTest {
             }
 
             # Summary for admins
-            Write-Host "Summary for Network Analysis:" -ForegroundColor Cyan
-            Write-Host "  Upload:       $uploadBandwidth Mbps" -ForegroundColor White
-            Write-Host "  Download:     $downloadBandwidth Mbps" -ForegroundColor White
+            if ($uploadBandwidth -gt 0 -or $downloadBandwidth -gt 0) {
+                Write-Host "Summary for Network Analysis:" -ForegroundColor Cyan
+                Write-Host "  Upload:       $uploadBandwidth Mbps" -ForegroundColor White
+                Write-Host "  Download:     $downloadBandwidth Mbps" -ForegroundColor White
 
-            $avgBandwidth = [math]::Round(($uploadBandwidth + $downloadBandwidth) / 2, 2)
-            Write-Host "  Average:      $avgBandwidth Mbps" -ForegroundColor White
+                $avgBandwidth = [math]::Round(($uploadBandwidth + $downloadBandwidth) / 2, 2)
+                Write-Host "  Average:      $avgBandwidth Mbps" -ForegroundColor White
 
-            if ($uploadRetrans -gt 0) {
-                Write-Host "  Note: $uploadRetrans retransmissions detected (may indicate network congestion)" -ForegroundColor Yellow
-            } else {
-                Write-Host "  Quality: Excellent (no retransmissions)" -ForegroundColor Green
+                if ($uploadRetrans -gt 0) {
+                    Write-Host "  Note: $uploadRetrans retransmissions detected (may indicate network congestion)" -ForegroundColor Yellow
+                } else {
+                    Write-Host "  Quality: Excellent (no retransmissions)" -ForegroundColor Green
+                }
+                Write-Host ""
             }
-            Write-Host ""
+            else {
+                Write-Host ""
+                Write-Host "WARNING: No valid test results obtained" -ForegroundColor Yellow
+                Write-Host "This may indicate network connectivity issues or firewall blocking." -ForegroundColor Gray
+                Write-Host "Check the logs at C:\VLABS\Maintenance\ for detailed output." -ForegroundColor Gray
+                Write-Host ""
+            }
 
         }
         catch {
-            Write-Host "Note: Could not parse detailed results" -ForegroundColor Yellow
-            Write-Host "Raw output available in logs" -ForegroundColor Gray
-            Write-LogMessage "Result parsing failed: $_" -Level Warning -Component 'NetworkSpeed'
+            Write-Host "ERROR: Could not process test results" -ForegroundColor Red
+            Write-Host $_.Exception.Message -ForegroundColor Yellow
+            Write-LogMessage "Result processing failed: $_" -Level Error -Component 'NetworkSpeed'
         }
 
         Write-Host "Network speed test completed successfully!" -ForegroundColor Green
