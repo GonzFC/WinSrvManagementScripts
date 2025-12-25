@@ -802,13 +802,22 @@ function Install-IPerf3 {
 
     Write-LogMessage "Checking iperf3 installation..." -Level Info -Component 'NetworkSpeed'
 
-    # Check if iperf3 is already available
+    # Check if iperf3 is already available and working
     $iperf3Cmd = Get-Command iperf3 -ErrorAction SilentlyContinue
 
     if ($iperf3Cmd) {
-        Write-LogMessage "iperf3 is already installed at $($iperf3Cmd.Source)" -Level Info -Component 'NetworkSpeed'
-        Write-Host "  iperf3 is already installed" -ForegroundColor Green
-        return $iperf3Cmd.Source
+        # Test if existing iperf3 works
+        $testOutput = & $iperf3Cmd.Source --version 2>&1 | Out-String
+
+        if (-not [string]::IsNullOrWhiteSpace($testOutput)) {
+            Write-LogMessage "iperf3 is already installed and working at $($iperf3Cmd.Source)" -Level Info -Component 'NetworkSpeed'
+            Write-Host "  iperf3 is already installed" -ForegroundColor Green
+            return $iperf3Cmd.Source
+        }
+        else {
+            Write-LogMessage "Existing iperf3 at $($iperf3Cmd.Source) doesn't work, reinstalling..." -Level Warning -Component 'NetworkSpeed'
+            Write-Host "  Existing iperf3 doesn't work, reinstalling..." -ForegroundColor Yellow
+        }
     }
 
     Write-Host "  iperf3 not found, installing..." -ForegroundColor Yellow
