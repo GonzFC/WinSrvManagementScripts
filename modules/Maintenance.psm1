@@ -838,13 +838,32 @@ function Install-IPerf3 {
         # Download iperf3 for Windows (using ar51an builds - statically linked, no dependencies)
         Write-Host "  Downloading iperf3 (latest static build)..." -ForegroundColor White
 
-        # Use ar51an's iperf3 Windows builds - regularly updated, statically linked
-        # These don't require Visual C++ runtime or other dependencies
-        $downloadUrl = 'https://github.com/ar51an/iperf3-win-builds/releases/latest/download/iperf3-win64.zip'
+        # Get latest release from ar51an's iperf3 Windows builds
+        try {
+            $releasesUrl = "https://api.github.com/repos/ar51an/iperf3-win-builds/releases/latest"
+            $release = Invoke-RestMethod -Uri $releasesUrl -UseBasicParsing
+
+            # Find the Windows 64-bit zip asset
+            $asset = $release.assets | Where-Object { $_.name -like "*win64.zip" -or $_.name -like "*windows*.zip" } | Select-Object -First 1
+
+            if ($asset) {
+                $downloadUrl = $asset.browser_download_url
+                Write-LogMessage "Found latest release: $($asset.name)" -Level Info -Component 'NetworkSpeed'
+            }
+            else {
+                throw "No suitable Windows build found in latest release"
+            }
+        }
+        catch {
+            Write-LogMessage "Failed to get latest release, using fallback version" -Level Warning -Component 'NetworkSpeed'
+            # Fallback to known working version
+            $downloadUrl = 'https://github.com/ar51an/iperf3-win-builds/releases/download/3.17.1/iperf3-3.17.1-win64.zip'
+        }
+
         $zipPath = Join-Path $env:TEMP 'iperf3.zip'
         $extractPath = Join-Path $env:TEMP 'iperf3_extract'
 
-        Write-LogMessage "Downloading from $downloadUrl (ar51an static build)" -Level Info -Component 'NetworkSpeed'
+        Write-LogMessage "Downloading from $downloadUrl" -Level Info -Component 'NetworkSpeed'
         Invoke-WebRequest -Uri $downloadUrl -OutFile $zipPath -UseBasicParsing
 
         # Extract ZIP
