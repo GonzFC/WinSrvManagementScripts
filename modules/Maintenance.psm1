@@ -875,29 +875,32 @@ function Install-IPerf3 {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
 
-        # Find and copy iperf3.exe
-        Write-LogMessage "Searching for iperf3.exe in $extractPath" -Level Info -Component 'NetworkSpeed'
+        # Copy all files from archive (iperf3.exe and dependencies like cygwin1.dll)
+        Write-LogMessage "Copying files from $extractPath to $installPath" -Level Info -Component 'NetworkSpeed'
 
         # List all files found for debugging
-        $allFiles = Get-ChildItem -Path $extractPath -Recurse -ErrorAction SilentlyContinue
+        $allFiles = Get-ChildItem -Path $extractPath -Recurse -File -ErrorAction SilentlyContinue
         Write-LogMessage "Files found in archive: $($allFiles.Name -join ', ')" -Level Info -Component 'NetworkSpeed'
 
-        $extractedExe = Get-ChildItem -Path $extractPath -Filter "iperf3.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($allFiles.Count -eq 0) {
+            throw "No files found in downloaded archive"
+        }
 
-        if ($extractedExe) {
-            Write-LogMessage "Found iperf3.exe at: $($extractedExe.FullName)" -Level Info -Component 'NetworkSpeed'
-            Copy-Item -Path $extractedExe.FullName -Destination $iperf3Exe -Force
+        # Copy all files (iperf3.exe and any DLL dependencies)
+        foreach ($file in $allFiles) {
+            $destFile = Join-Path $installPath $file.Name
+            Copy-Item -Path $file.FullName -Destination $destFile -Force
+            Write-LogMessage "Copied $($file.Name) to $installPath" -Level Info -Component 'NetworkSpeed'
+        }
+
+        # Verify iperf3.exe was copied
+        if (Test-Path $iperf3Exe) {
+            $fileInfo = Get-Item $iperf3Exe
             Write-Host "  iperf3 installed successfully!" -ForegroundColor Green
-            Write-LogMessage "iperf3 installed to $iperf3Exe" -Level Success -Component 'NetworkSpeed'
-
-            # Verify the copied file
-            if (Test-Path $iperf3Exe) {
-                $fileInfo = Get-Item $iperf3Exe
-                Write-LogMessage "Installed file size: $($fileInfo.Length) bytes" -Level Info -Component 'NetworkSpeed'
-            }
+            Write-LogMessage "iperf3 installed to $iperf3Exe (size: $($fileInfo.Length) bytes)" -Level Success -Component 'NetworkSpeed'
         } else {
-            Write-LogMessage "ERROR: Could not find iperf3.exe in archive. Files found: $($allFiles.Name -join ', ')" -Level Error -Component 'NetworkSpeed'
-            throw "Could not find iperf3.exe in downloaded archive"
+            Write-LogMessage "ERROR: iperf3.exe not found after copy. Files copied: $($allFiles.Name -join ', ')" -Level Error -Component 'NetworkSpeed'
+            throw "iperf3.exe not found after installation"
         }
 
         # Cleanup
