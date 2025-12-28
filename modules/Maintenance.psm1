@@ -976,6 +976,40 @@ function Invoke-NetworkSpeedTest {
         if ([string]::IsNullOrWhiteSpace($serverAddress)) {
             throw "Peer IP address is required for peer to peer testing"
         }
+
+        # Test connectivity to peer on iperf3 port (5201)
+        Write-Host ""
+        Write-Host "Testing connectivity to $serverAddress`:5201..." -ForegroundColor Cyan
+
+        try {
+            $tcpTest = Test-NetConnection -ComputerName $serverAddress -Port 5201 -WarningAction SilentlyContinue -ErrorAction Stop
+
+            if (-not $tcpTest.TcpTestSucceeded) {
+                Write-Host ""
+                Write-Host "WARNING: Cannot connect to $serverAddress on port 5201" -ForegroundColor Yellow
+                Write-Host ""
+                Write-Host "To run peer-to-peer tests, you need to:" -ForegroundColor Cyan
+                Write-Host "  1. Run this tool on the peer ($serverAddress)" -ForegroundColor White
+                Write-Host "  2. Select Performance > Network Speed Test" -ForegroundColor White
+                Write-Host "  3. Choose 'Peer to Peer' and enter THIS computer's IP" -ForegroundColor White
+                Write-Host "  4. The peer will start an iperf3 server automatically" -ForegroundColor White
+                Write-Host ""
+                Write-Host "OR open Windows Firewall port 5201 on the peer:" -ForegroundColor Cyan
+                Write-Host "  New-NetFirewallRule -DisplayName 'iperf3' -Direction Inbound -Protocol TCP -LocalPort 5201 -Action Allow" -ForegroundColor Gray
+                Write-Host ""
+
+                if (-not (Show-Confirmation -Message "Continue anyway?" -DefaultYes:$false)) {
+                    throw "Peer connectivity test failed - port 5201 not reachable"
+                }
+            }
+            else {
+                Write-Host "  Connection successful! iperf3 server is running on peer." -ForegroundColor Green
+            }
+        }
+        catch {
+            Write-LogMessage "Connectivity test failed: $_" -Level Warning -Component 'NetworkSpeed'
+            Write-Host "  Note: Could not test connectivity (continuing anyway)" -ForegroundColor Gray
+        }
     } else {
         # Use public iperf3 server
         $serverAddress = "ping.online.net"  # Reliable public iperf3 server
