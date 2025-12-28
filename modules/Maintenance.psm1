@@ -1083,7 +1083,14 @@ function Invoke-NetworkSpeedTest {
         $uploadOutput = & $iperf3Cmd $uploadArgs 2>&1 | Out-String
 
         # Check if we got an error
-        if ($uploadOutput -match 'error|unable to connect|connection refused|No route to host') {
+        if ($uploadOutput -match 'server is busy') {
+            Write-Host ""
+            Write-Host "NOTE: Public server is busy running another test" -ForegroundColor Yellow
+            Write-Host "Please wait a moment and try again, or use Peer to Peer mode." -ForegroundColor Cyan
+            Write-Host ""
+            throw "Server is busy - please try again in a moment"
+        }
+        elseif ($uploadOutput -match 'unable to connect|connection refused|No route to host|error connecting') {
             Write-Host ""
             Write-Host "ERROR: Upload test failed" -ForegroundColor Red
             Write-Host $uploadOutput -ForegroundColor Yellow
@@ -1102,7 +1109,14 @@ function Invoke-NetworkSpeedTest {
         $downloadOutput = & $iperf3Cmd $downloadArgs 2>&1 | Out-String
 
         # Check if we got an error
-        if ($downloadOutput -match 'error|unable to connect|connection refused|No route to host') {
+        if ($downloadOutput -match 'server is busy') {
+            Write-Host ""
+            Write-Host "NOTE: Public server is busy running another test" -ForegroundColor Yellow
+            Write-Host "Please wait a moment and try again, or use Peer to Peer mode." -ForegroundColor Cyan
+            Write-Host ""
+            throw "Server is busy - please try again in a moment"
+        }
+        elseif ($downloadOutput -match 'unable to connect|connection refused|No route to host|error connecting') {
             Write-Host ""
             Write-Host "ERROR: Download test failed" -ForegroundColor Red
             Write-Host $downloadOutput -ForegroundColor Yellow
