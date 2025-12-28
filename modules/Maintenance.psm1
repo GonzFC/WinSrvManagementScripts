@@ -953,68 +953,50 @@ function Invoke-NetworkSpeedTest {
 
     Write-Host ""
     Write-Host "======================================" -ForegroundColor Cyan
-    Write-Host " Network Speed Test" -ForegroundColor Cyan
+    Write-Host " Network Speed Test (Peer to Peer)" -ForegroundColor Cyan
     Write-Host "======================================" -ForegroundColor Cyan
     Write-Host ""
 
-    # Step 1: Ask test mode
-    Write-Host "Test Mode:" -ForegroundColor Yellow
-    Write-Host "  [1] Peer to Peer (both systems run this tool)" -ForegroundColor White
-    Write-Host "  [2] Peer to Internet (test to public server)" -ForegroundColor White
+    # Get peer IP address
+    Write-Host -NoNewline "Enter peer IP address: " -ForegroundColor Cyan
+    $serverAddress = Read-Host
+
+    if ([string]::IsNullOrWhiteSpace($serverAddress)) {
+        throw "Peer IP address is required for network speed testing"
+    }
+
+    # Test connectivity to peer on iperf3 port (5201)
     Write-Host ""
-    Write-Host -NoNewline "Select mode [1 or 2]: " -ForegroundColor Cyan
-    $modeChoice = Read-Host
+    Write-Host "Testing connectivity to $serverAddress`:5201..." -ForegroundColor Cyan
 
-    $peerToPeer = ($modeChoice -eq '1')
-    $serverAddress = $null
+    try {
+        $tcpTest = Test-NetConnection -ComputerName $serverAddress -Port 5201 -WarningAction SilentlyContinue -ErrorAction Stop
 
-    if ($peerToPeer) {
-        Write-Host ""
-        Write-Host -NoNewline "Enter peer IP address: " -ForegroundColor Cyan
-        $serverAddress = Read-Host
+        if (-not $tcpTest.TcpTestSucceeded) {
+            Write-Host ""
+            Write-Host "WARNING: Cannot connect to $serverAddress on port 5201" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "To run peer-to-peer tests, you need to:" -ForegroundColor Cyan
+            Write-Host "  1. Run this tool on the peer ($serverAddress)" -ForegroundColor White
+            Write-Host "  2. Select Performance > Network Speed Test" -ForegroundColor White
+            Write-Host "  3. Enter THIS computer's IP address" -ForegroundColor White
+            Write-Host "  4. Both systems will test bidirectionally" -ForegroundColor White
+            Write-Host ""
+            Write-Host "OR open Windows Firewall port 5201 on the peer:" -ForegroundColor Cyan
+            Write-Host "  New-NetFirewallRule -DisplayName 'iperf3' -Direction Inbound -Protocol TCP -LocalPort 5201 -Action Allow" -ForegroundColor Gray
+            Write-Host ""
 
-        if ([string]::IsNullOrWhiteSpace($serverAddress)) {
-            throw "Peer IP address is required for peer to peer testing"
-        }
-
-        # Test connectivity to peer on iperf3 port (5201)
-        Write-Host ""
-        Write-Host "Testing connectivity to $serverAddress`:5201..." -ForegroundColor Cyan
-
-        try {
-            $tcpTest = Test-NetConnection -ComputerName $serverAddress -Port 5201 -WarningAction SilentlyContinue -ErrorAction Stop
-
-            if (-not $tcpTest.TcpTestSucceeded) {
-                Write-Host ""
-                Write-Host "WARNING: Cannot connect to $serverAddress on port 5201" -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "To run peer-to-peer tests, you need to:" -ForegroundColor Cyan
-                Write-Host "  1. Run this tool on the peer ($serverAddress)" -ForegroundColor White
-                Write-Host "  2. Select Performance > Network Speed Test" -ForegroundColor White
-                Write-Host "  3. Choose 'Peer to Peer' and enter THIS computer's IP" -ForegroundColor White
-                Write-Host "  4. The peer will start an iperf3 server automatically" -ForegroundColor White
-                Write-Host ""
-                Write-Host "OR open Windows Firewall port 5201 on the peer:" -ForegroundColor Cyan
-                Write-Host "  New-NetFirewallRule -DisplayName 'iperf3' -Direction Inbound -Protocol TCP -LocalPort 5201 -Action Allow" -ForegroundColor Gray
-                Write-Host ""
-
-                if (-not (Show-Confirmation -Message "Continue anyway?" -DefaultYes:$false)) {
-                    throw "Peer connectivity test failed - port 5201 not reachable"
-                }
-            }
-            else {
-                Write-Host "  Connection successful! iperf3 server is running on peer." -ForegroundColor Green
+            if (-not (Show-Confirmation -Message "Continue anyway?" -DefaultYes:$false)) {
+                throw "Peer connectivity test failed - port 5201 not reachable"
             }
         }
-        catch {
-            Write-LogMessage "Connectivity test failed: $_" -Level Warning -Component 'NetworkSpeed'
-            Write-Host "  Note: Could not test connectivity (continuing anyway)" -ForegroundColor Gray
+        else {
+            Write-Host "  Connection successful! iperf3 server is running on peer." -ForegroundColor Green
         }
-    } else {
-        # Use public iperf3 server
-        $serverAddress = "ping.online.net"  # Reliable public iperf3 server
-        Write-Host ""
-        Write-Host "Using public test server: $serverAddress" -ForegroundColor Green
+    }
+    catch {
+        Write-LogMessage "Connectivity test failed: $_" -Level Warning -Component 'NetworkSpeed'
+        Write-Host "  Note: Could not test connectivity (continuing anyway)" -ForegroundColor Gray
     }
 
     # Step 2: Ask test duration preset
@@ -1047,13 +1029,13 @@ function Invoke-NetworkSpeedTest {
     Write-Host "======================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Configuration:" -ForegroundColor Yellow
-    Write-Host "  Mode:     $(if ($peerToPeer) { 'Peer to Peer' } else { 'Internet Test' })" -ForegroundColor White
-    Write-Host "  Server:   $serverAddress" -ForegroundColor White
+    Write-Host "  Mode:     Peer to Peer" -ForegroundColor White
+    Write-Host "  Peer:     $serverAddress" -ForegroundColor White
     Write-Host "  Duration: $duration seconds" -ForegroundColor White
     Write-Host "  Protocol: TCP (bidirectional)" -ForegroundColor White
     Write-Host ""
 
-    Write-LogMessage "Test config: Mode=$(if ($peerToPeer) { 'P2P' } else { 'Internet' }), Server=$serverAddress, Duration=$duration" -Level Info -Component 'NetworkSpeed'
+    Write-LogMessage "Test config: Mode=P2P, Peer=$serverAddress, Duration=$duration" -Level Info -Component 'NetworkSpeed'
 
     # Run bidirectional tests
     try {
@@ -1278,11 +1260,8 @@ function Invoke-NetworkSpeedTest {
 
         Write-Host "Network speed test completed successfully!" -ForegroundColor Green
         Write-Host ""
-
-        if ($peerToPeer) {
-            Write-Host "Tip: Run the same test on your peer for complete bidirectional analysis" -ForegroundColor Cyan
-            Write-Host ""
-        }
+        Write-Host "Tip: Run the same test on your peer for complete bidirectional analysis" -ForegroundColor Cyan
+        Write-Host ""
     }
     catch {
         Write-LogMessage "Network speed test failed: $_" -Level Error -Component 'NetworkSpeed'
