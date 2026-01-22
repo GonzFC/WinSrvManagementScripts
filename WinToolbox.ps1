@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.6'
+$script:ToolboxVersion = '1.0.7'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -291,7 +291,7 @@ function Show-MainMenu {
         '2' = 'Remote Access'
         '3' = 'Security & Privacy'
         '4' = 'Maintenance'
-        '5' = 'Performance'
+        '5' = 'Performance & Updates'
         '6' = 'View System Information'
         '7' = 'View Logs'
         '8' = 'Check for Updates'
@@ -504,9 +504,10 @@ function Show-MaintenanceMenu {
 function Show-PerformanceMenu {
     $options = [ordered]@{
         '1' = 'Network Speed Test (iperf3)'
+        '2' = 'Configure Windows Update (Stable Security Patching)'
     }
 
-    $selection = Show-Menu -Title "Performance" -Options $options -AllowBack
+    $selection = Show-Menu -Title "Performance & Updates" -Options $options -AllowBack
 
     switch ($selection) {
         '1' {
@@ -518,6 +519,33 @@ function Show-PerformanceMenu {
                 Write-Host ""
                 Write-Host "Network speed test failed. Check logs for details." -ForegroundColor Red
                 Invoke-Pause
+            }
+        }
+
+        '2' {
+            Write-Host ""
+            Write-Host "Windows Update Configuration" -ForegroundColor Cyan
+            Write-Host ""
+            Write-Host "This will configure Windows Update for:" -ForegroundColor White
+            Write-Host "  - Weekly updates on Sundays at 4:00 AM only" -ForegroundColor Gray
+            Write-Host "  - Critical security updates only (no feature updates)" -ForegroundColor Gray
+            Write-Host "  - Automatic restart on Sundays after patching" -ForegroundColor Gray
+            Write-Host "  - No hardware driver updates" -ForegroundColor Gray
+            Write-Host "  - Active hours protection (Mon-Sat: 6 AM - 11 PM)" -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Benefits: Stability, bandwidth savings, predictable maintenance" -ForegroundColor Yellow
+            Write-Host ""
+
+            if (Show-Confirmation -Message "Configure Windows Update with these settings?" -DefaultYes) {
+                try {
+                    Set-WindowsUpdateConfiguration
+                    Invoke-Pause
+                }
+                catch {
+                    Write-Host ""
+                    Write-Host "Configuration failed. Check logs for details." -ForegroundColor Red
+                    Invoke-Pause
+                }
             }
         }
 
