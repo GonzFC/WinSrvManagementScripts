@@ -259,7 +259,7 @@ try {
 
     Write-Host ""
     Write-Host "How to Manually Check for Updates:" -ForegroundColor Yellow
-    Write-Host "  1. Open Settings > Update `& Security > Windows Update" -ForegroundColor White
+    Write-Host "  1. Open Settings -> Update & Security -> Windows Update" -ForegroundColor White
     Write-Host "  2. Click 'Check for updates' button" -ForegroundColor White
     Write-Host "  3. Review available updates" -ForegroundColor White
     Write-Host "  4. Select and install only critical security updates" -ForegroundColor White
