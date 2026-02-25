@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.0.7'
+$script:ToolboxVersion = '1.0.8'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -286,274 +286,51 @@ function Test-Prerequisites {
 #region Menu System
 
 function Show-MainMenu {
-    $options = [ordered]@{
-        '1' = 'System Optimization'
-        '2' = 'Remote Access'
-        '3' = 'Security & Privacy'
-        '4' = 'Maintenance'
-        '5' = 'Performance & Updates'
-        '6' = 'View System Information'
-        '7' = 'View Logs'
-        '8' = 'Check for Updates'
-    }
+    Clear-Host
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host " Windows Management Toolbox v$script:ToolboxVersion" -ForegroundColor Cyan
+    Write-Host " $env:COMPUTERNAME" -ForegroundColor DarkCyan
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
 
-    $title = "Windows Management Toolbox v$script:ToolboxVersion"
-    $selection = Show-Menu -Title $title -Options $options
-    return $selection
-}
+    Write-Host "  System Optimization" -ForegroundColor Cyan
+    Write-Host "   [ 1]  Reclaim Disk Space (WinSxS, Updates, TEMP, Profiles)" -ForegroundColor White
+    Write-Host "   [ 2]  Disable Backgrounds and Animations" -ForegroundColor White
+    Write-Host ""
 
-function Show-SystemOptimizationMenu {
-    $options = [ordered]@{
-        '1' = 'Reclaim Disk Space (WinSxS, Updates, TEMP, Profiles)'
-        '2' = 'Disable Backgrounds and Animations'
-    }
+    Write-Host "  Remote Access" -ForegroundColor Cyan
+    Write-Host "   [ 3]  Install Tailscale VPN" -ForegroundColor White
+    Write-Host "   [ 4]  Install Jump Desktop Connect" -ForegroundColor White
+    Write-Host ""
 
-    $selection = Show-Menu -Title "System Optimization" -Options $options -AllowBack
+    Write-Host "  Security & Privacy" -ForegroundColor Cyan
+    Write-Host "   [ 5]  Harden Microsoft Edge (Privacy & Clean Homepage)" -ForegroundColor White
+    Write-Host ""
 
-    switch ($selection) {
-        '1' {
-            Write-Host ""
-            Write-Host "Disk Space Reclamation Options:" -ForegroundColor Cyan
-            Write-Host ""
+    Write-Host "  Maintenance" -ForegroundColor Cyan
+    Write-Host "   [ 6]  Install Desktop Info Widget" -ForegroundColor White
+    Write-Host "   [ 7]  Upgrade TLS and PowerShell (Legacy Systems)" -ForegroundColor White
+    Write-Host "   [ 8]  Install Virtualization Tools (XCP-ng / XenServer)" -ForegroundColor White
+    Write-Host ""
 
-            $daysInactive = Read-Host "Days of inactivity for profile deletion (default: 30)"
-            if ([string]::IsNullOrWhiteSpace($daysInactive)) { $daysInactive = 30 }
-            else { $daysInactive = [int]$daysInactive }
+    Write-Host "  Performance & Updates" -ForegroundColor Cyan
+    Write-Host "   [ 9]  Network Speed Test (iperf3)" -ForegroundColor White
+    Write-Host "   [10]  Configure Windows Update (Stable Security Patching)" -ForegroundColor White
+    Write-Host ""
 
-            Write-Host ""
-            $deepClean = Show-Confirmation -Message "Perform deep component cleanup (/ResetBase)? This prevents uninstalling existing updates" -DefaultYes:$false
+    Write-Host "  System" -ForegroundColor Cyan
+    Write-Host "   [11]  View System Information" -ForegroundColor White
+    Write-Host "   [12]  View Logs" -ForegroundColor White
+    Write-Host "   [13]  Check for Updates" -ForegroundColor White
+    Write-Host ""
 
-            Write-Host ""
-            $skipProfiles = -not (Show-Confirmation -Message "Delete inactive user profiles?" -DefaultYes:$false)
+    Write-Host "   [ Q]  Quit" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host -NoNewline "Select: " -ForegroundColor Yellow
 
-            Write-Host ""
-            $schedule = Show-Confirmation -Message "Create weekly scheduled task?" -DefaultYes:$false
-
-            Write-Host ""
-            Write-Host "Starting disk space reclamation..." -ForegroundColor Cyan
-
-            Invoke-DiskSpaceReclamation -DaysInactive $daysInactive `
-                -DeepComponentCleanup:$deepClean `
-                -SkipProfileDeletion:$skipProfiles `
-                -Schedule:$schedule
-
-            Invoke-Pause
-        }
-
-        '2' {
-            Write-Host ""
-            if (Show-Confirmation -Message "Disable backgrounds and animations for all users?" -DefaultYes) {
-                Disable-BackgroundsAndAnimations
-                Invoke-Pause
-            }
-        }
-
-        'B' { return 'BACK' }
-        'Q' { return 'QUIT' }
-    }
-
-    return 'CONTINUE'
-}
-
-function Show-RemoteAccessMenu {
-    $options = [ordered]@{
-        '1' = 'Install Tailscale VPN'
-        '2' = 'Install Jump Desktop Connect'
-    }
-
-    $selection = Show-Menu -Title "Remote Access" -Options $options -AllowBack
-
-    switch ($selection) {
-        '1' {
-            Write-Host ""
-            Write-Host "Tailscale Installation Options:" -ForegroundColor Cyan
-            Write-Host ""
-
-            $authKey = Read-Host "Auth Key (leave blank to configure later)"
-            $loginServer = Read-Host "Login Server (leave blank for default)"
-
-            Write-Host ""
-            $acceptRoutes = Show-Confirmation -Message "Accept routes from other Tailscale nodes?" -DefaultYes:$false
-
-            Write-Host ""
-            $advertiseRoutes = Read-Host "Advertise routes (comma-separated, e.g., 192.168.1.0/24)"
-
-            Write-Host ""
-            $acceptDNS = Show-Confirmation -Message "Accept DNS from Tailscale?" -DefaultYes:$false
-
-            Write-Host ""
-            $hostname = Read-Host "Hostname (leave blank for system default)"
-
-            Write-Host ""
-            Write-Host "Installing Tailscale..." -ForegroundColor Cyan
-
-            $params = @{}
-            if ($authKey) { $params['AuthKey'] = $authKey }
-            if ($loginServer) { $params['LoginServer'] = $loginServer }
-            if ($acceptRoutes) { $params['AcceptRoutes'] = $true }
-            if ($advertiseRoutes) { $params['AdvertiseRoutes'] = $advertiseRoutes }
-            if ($acceptDNS) { $params['AcceptDNS'] = $true }
-            if ($hostname) { $params['Hostname'] = $hostname }
-
-            Install-Tailscale @params
-
-            Invoke-Pause
-        }
-
-        '2' {
-            Write-Host ""
-            if (Show-Confirmation -Message "Install Jump Desktop Connect?" -DefaultYes) {
-                Install-JumpDesktopConnect
-                Invoke-Pause
-            }
-        }
-
-        'B' { return 'BACK' }
-        'Q' { return 'QUIT' }
-    }
-
-    return 'CONTINUE'
-}
-
-function Show-SecurityPrivacyMenu {
-    $options = [ordered]@{
-        '1' = 'Harden Microsoft Edge (Privacy & Clean Homepage)'
-    }
-
-    $selection = Show-Menu -Title "Security & Privacy" -Options $options -AllowBack
-
-    switch ($selection) {
-        '1' {
-            Write-Host ""
-            if (Show-Confirmation -Message "Configure Microsoft Edge for privacy and minimal browsing?" -DefaultYes) {
-                Set-EdgePrivacySettings
-                Invoke-Pause
-            }
-        }
-
-        'B' { return 'BACK' }
-        'Q' { return 'QUIT' }
-    }
-
-    return 'CONTINUE'
-}
-
-function Show-MaintenanceMenu {
-    $options = [ordered]@{
-        '1' = 'Install Desktop Info Widget'
-        '2' = 'Upgrade TLS and PowerShell (Legacy Systems)'
-        '3' = 'Install Virtualization Tools (XCP-ng / XenServer)'
-    }
-
-    $selection = Show-Menu -Title "Maintenance" -Options $options -AllowBack
-
-    switch ($selection) {
-        '1' {
-            Write-Host ""
-            if (Show-Confirmation -Message "Install/Update Desktop Info Widget?" -DefaultYes) {
-                Install-DesktopInfoWidget
-                Invoke-Pause
-            }
-        }
-
-        '2' {
-            Write-Host ""
-            Write-Host "TLS and PowerShell Upgrade Options:" -ForegroundColor Cyan
-            Write-Host ""
-
-            $updateRoots = Show-Confirmation -Message "Update root certificates from Windows Update?" -DefaultYes:$false
-
-            Write-Host ""
-            Write-Host "Starting upgrade (this may take several minutes)..." -ForegroundColor Cyan
-
-            Invoke-TLSAndPowerShellUpgrade -UpdateRoots:$updateRoots
-
-            Invoke-Pause
-        }
-
-        '3' {
-            Write-Host ""
-            Write-Host "Virtualization Guest Tools Installation:" -ForegroundColor Cyan
-            Write-Host ""
-
-            $noReboot = -not (Show-Confirmation -Message "Automatically reboot after installation?" -DefaultYes)
-
-            Write-Host ""
-            $disableWUDrivers = Show-Confirmation -Message "Block Windows Update from delivering drivers?" -DefaultYes
-
-            Write-Host ""
-            Write-Host "Starting installation (you will choose XCP-ng or XenServer)..." -ForegroundColor Cyan
-
-            Install-XenServerTools -NoReboot:$noReboot -DisableWUDrivers:$disableWUDrivers
-
-            if (-not $noReboot) {
-                # Script will reboot, won't reach here
-                return 'QUIT'
-            }
-
-            Invoke-Pause
-        }
-
-        'B' { return 'BACK' }
-        'Q' { return 'QUIT' }
-    }
-
-    return 'CONTINUE'
-}
-
-function Show-PerformanceMenu {
-    $options = [ordered]@{
-        '1' = 'Network Speed Test (iperf3)'
-        '2' = 'Configure Windows Update (Stable Security Patching)'
-    }
-
-    $selection = Show-Menu -Title "Performance & Updates" -Options $options -AllowBack
-
-    switch ($selection) {
-        '1' {
-            try {
-                Invoke-NetworkSpeedTest
-                Invoke-Pause
-            }
-            catch {
-                Write-Host ""
-                Write-Host "Network speed test failed. Check logs for details." -ForegroundColor Red
-                Invoke-Pause
-            }
-        }
-
-        '2' {
-            Write-Host ""
-            Write-Host "Windows Update Configuration" -ForegroundColor Cyan
-            Write-Host ""
-            Write-Host "This will configure Windows Update for:" -ForegroundColor White
-            Write-Host "  - Weekly updates on Sundays at 4:00 AM only" -ForegroundColor Gray
-            Write-Host "  - Critical security updates only (no feature updates)" -ForegroundColor Gray
-            Write-Host "  - Automatic restart on Sundays after patching" -ForegroundColor Gray
-            Write-Host "  - No hardware driver updates" -ForegroundColor Gray
-            Write-Host "  - Active hours protection (Mon-Sat: 6 AM - 11 PM)" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "Benefits: Stability, bandwidth savings, predictable maintenance" -ForegroundColor Yellow
-            Write-Host ""
-
-            if (Show-Confirmation -Message "Configure Windows Update with these settings?" -DefaultYes) {
-                try {
-                    Set-WindowsUpdateConfiguration
-                    Invoke-Pause
-                }
-                catch {
-                    Write-Host ""
-                    Write-Host "Configuration failed. Check logs for details." -ForegroundColor Red
-                    Invoke-Pause
-                }
-            }
-        }
-
-        'B' { return 'BACK' }
-        'Q' { return 'QUIT' }
-    }
-
-    return 'CONTINUE'
+    $selection = Read-Host
+    return $selection.Trim().ToUpper()
 }
 
 function Show-SystemInformation {
@@ -707,7 +484,7 @@ if (-not $SkipUpdateCheck) {
         }
         else {
             Write-Host ""
-            Write-Host "You can update later from the main menu (option 7)" -ForegroundColor Gray
+            Write-Host "You can update later from the main menu (option 13)" -ForegroundColor Gray
             Write-Host ""
             Invoke-Pause
         }
@@ -718,58 +495,159 @@ if (-not $SkipUpdateCheck) {
 $running = $true
 
 while ($running) {
-    $mainSelection = Show-MainMenu
+    $sel = Show-MainMenu
 
-    switch ($mainSelection) {
+    switch ($sel) {
+
         '1' {
-            $result = Show-SystemOptimizationMenu
-            if ($result -eq 'QUIT') { $running = $false }
+            Write-Host ""
+            Write-Host "Disk Space Reclamation Options:" -ForegroundColor Cyan
+            Write-Host ""
+            $daysInactive = Read-Host "Days of inactivity for profile deletion (default: 30)"
+            if ([string]::IsNullOrWhiteSpace($daysInactive)) { $daysInactive = 30 }
+            else { $daysInactive = [int]$daysInactive }
+            Write-Host ""
+            $deepClean = Show-Confirmation -Message "Perform deep component cleanup (/ResetBase)? This prevents uninstalling existing updates" -DefaultYes:$false
+            Write-Host ""
+            $skipProfiles = -not (Show-Confirmation -Message "Delete inactive user profiles?" -DefaultYes:$false)
+            Write-Host ""
+            $schedule = Show-Confirmation -Message "Create weekly scheduled task?" -DefaultYes:$false
+            Write-Host ""
+            Write-Host "Starting disk space reclamation..." -ForegroundColor Cyan
+            Invoke-DiskSpaceReclamation -DaysInactive $daysInactive `
+                -DeepComponentCleanup:$deepClean `
+                -SkipProfileDeletion:$skipProfiles `
+                -Schedule:$schedule
+            Invoke-Pause
         }
 
         '2' {
-            $result = Show-RemoteAccessMenu
-            if ($result -eq 'QUIT') { $running = $false }
+            Write-Host ""
+            if (Show-Confirmation -Message "Disable backgrounds and animations for all users?" -DefaultYes) {
+                Disable-BackgroundsAndAnimations
+                Invoke-Pause
+            }
         }
 
         '3' {
-            $result = Show-SecurityPrivacyMenu
-            if ($result -eq 'QUIT') { $running = $false }
+            Write-Host ""
+            Write-Host "Tailscale Installation Options:" -ForegroundColor Cyan
+            Write-Host ""
+            $authKey = Read-Host "Auth Key (leave blank to configure later)"
+            $loginServer = Read-Host "Login Server (leave blank for default)"
+            Write-Host ""
+            $acceptRoutes = Show-Confirmation -Message "Accept routes from other Tailscale nodes?" -DefaultYes:$false
+            Write-Host ""
+            $advertiseRoutes = Read-Host "Advertise routes (comma-separated, e.g., 192.168.1.0/24)"
+            Write-Host ""
+            $acceptDNS = Show-Confirmation -Message "Accept DNS from Tailscale?" -DefaultYes:$false
+            Write-Host ""
+            $hostname = Read-Host "Hostname (leave blank for system default)"
+            Write-Host ""
+            Write-Host "Installing Tailscale..." -ForegroundColor Cyan
+            $params = @{}
+            if ($authKey) { $params['AuthKey'] = $authKey }
+            if ($loginServer) { $params['LoginServer'] = $loginServer }
+            if ($acceptRoutes) { $params['AcceptRoutes'] = $true }
+            if ($advertiseRoutes) { $params['AdvertiseRoutes'] = $advertiseRoutes }
+            if ($acceptDNS) { $params['AcceptDNS'] = $true }
+            if ($hostname) { $params['Hostname'] = $hostname }
+            Install-Tailscale @params
+            Invoke-Pause
         }
 
         '4' {
-            $result = Show-MaintenanceMenu
-            if ($result -eq 'QUIT') { $running = $false }
+            Write-Host ""
+            if (Show-Confirmation -Message "Install Jump Desktop Connect?" -DefaultYes) {
+                Install-JumpDesktopConnect
+                Invoke-Pause
+            }
         }
 
         '5' {
-            $result = Show-PerformanceMenu
-            if ($result -eq 'QUIT') { $running = $false }
+            Write-Host ""
+            if (Show-Confirmation -Message "Configure Microsoft Edge for privacy and minimal browsing?" -DefaultYes) {
+                Set-EdgePrivacySettings
+                Invoke-Pause
+            }
         }
 
         '6' {
-            Show-SystemInformation
+            Write-Host ""
+            if (Show-Confirmation -Message "Install/Update Desktop Info Widget?" -DefaultYes) {
+                Install-DesktopInfoWidget
+                Invoke-Pause
+            }
         }
 
         '7' {
-            Show-LogViewer
+            Write-Host ""
+            Write-Host "TLS and PowerShell Upgrade Options:" -ForegroundColor Cyan
+            Write-Host ""
+            $updateRoots = Show-Confirmation -Message "Update root certificates from Windows Update?" -DefaultYes:$false
+            Write-Host ""
+            Write-Host "Starting upgrade (this may take several minutes)..." -ForegroundColor Cyan
+            Invoke-TLSAndPowerShellUpgrade -UpdateRoots:$updateRoots
+            Invoke-Pause
         }
 
         '8' {
-            # Check for updates
+            Write-Host ""
+            Write-Host "Virtualization Guest Tools Installation:" -ForegroundColor Cyan
+            Write-Host ""
+            $noReboot = -not (Show-Confirmation -Message "Automatically reboot after installation?" -DefaultYes)
+            Write-Host ""
+            $disableWUDrivers = Show-Confirmation -Message "Block Windows Update from delivering drivers?" -DefaultYes
+            Write-Host ""
+            Write-Host "Starting installation (you will choose XCP-ng or XenServer)..." -ForegroundColor Cyan
+            Install-XenServerTools -NoReboot:$noReboot -DisableWUDrivers:$disableWUDrivers
+            if (-not $noReboot) { $running = $false }
+            else { Invoke-Pause }
+        }
+
+        '9' {
+            try {
+                Invoke-NetworkSpeedTest
+                Invoke-Pause
+            }
+            catch {
+                Write-Host ""
+                Write-Host "Network speed test failed. Check logs for details." -ForegroundColor Red
+                Invoke-Pause
+            }
+        }
+
+        '10' {
+            Write-Host ""
+            if (Show-Confirmation -Message "Configure Windows Update with stable security patching settings?" -DefaultYes) {
+                try {
+                    Set-WindowsUpdateConfiguration
+                    Invoke-Pause
+                }
+                catch {
+                    Write-Host ""
+                    Write-Host "Configuration failed. Check logs for details." -ForegroundColor Red
+                    Invoke-Pause
+                }
+            }
+        }
+
+        '11' { Show-SystemInformation }
+
+        '12' { Show-LogViewer }
+
+        '13' {
             Write-Host ""
             Write-Host "Checking for updates..." -ForegroundColor Cyan
             $updateInfo = Test-ToolboxUpdate
-
             if ($updateInfo.UpdateAvailable) {
                 Write-Host ""
                 Write-Host "Update available!" -ForegroundColor Green
                 Write-Host "  Current version: $($updateInfo.CurrentVersion)" -ForegroundColor Yellow
                 Write-Host "  Latest version:  $($updateInfo.LatestVersion)" -ForegroundColor Green
                 Write-Host ""
-
                 if (Show-Confirmation -Message "Would you like to update now?" -DefaultYes) {
                     Invoke-ToolboxUpdate
-                    # If we reach here, update failed
                 }
             }
             else {
@@ -780,9 +658,7 @@ while ($running) {
             }
         }
 
-        'Q' {
-            $running = $false
-        }
+        'Q' { $running = $false }
 
         default {
             Write-Host ""
