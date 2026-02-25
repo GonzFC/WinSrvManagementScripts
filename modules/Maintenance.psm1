@@ -1439,6 +1439,57 @@ function Set-WindowsUpdateConfiguration {
     }
 }
 
+<#
+.SYNOPSIS
+    Disables automatic Windows updates completely
+
+.DESCRIPTION
+    Launches the standalone script to disable automatic Windows updates.
+    Only manual updates will be possible after this configuration.
+
+.EXAMPLE
+    Disable-WindowsUpdates
+#>
+function Disable-WindowsUpdates {
+    [CmdletBinding()]
+    param()
+
+    Write-LogMessage "Launching Windows Update disable configuration..." -Level Info -Component 'WindowsUpdate'
+
+    try {
+        # Ensure we're running as Administrator
+        if (-not (Test-Administrator)) {
+            Write-LogMessage "Administrator privileges required" -Level Error -Component 'WindowsUpdate'
+            throw "This operation requires Administrator privileges"
+        }
+
+        # Path to the script
+        $scriptPath = Join-Path $Global:ToolboxRoot 'WinSrv - Disable Windows Updates.ps1'
+
+        if (-not (Test-Path $scriptPath)) {
+            throw "Script not found: $scriptPath"
+        }
+
+        # Launch the script
+        Write-Host ""
+        Write-Host "Launching Windows Update disable configuration script..." -ForegroundColor Cyan
+        Write-Host ""
+
+        # Execute the script in the current session
+        & $scriptPath
+
+        Write-LogMessage "Windows Update disable configuration completed" -Level Success -Component 'WindowsUpdate'
+    }
+    catch {
+        Write-LogMessage "Failed to disable Windows updates: $($_.Exception.Message)" -Level Error -Component 'WindowsUpdate'
+        Write-Host ""
+        Write-Host "ERROR: Failed to disable Windows updates" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+        Write-Host ""
+        throw
+    }
+}
+
 #endregion
 
 # Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
