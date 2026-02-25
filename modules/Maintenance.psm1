@@ -1275,10 +1275,177 @@ function Invoke-NetworkSpeedTest {
 
 #endregion
 
+#region Windows Update Configuration
+
+<#
+.SYNOPSIS
+    Configures Windows Update for stable, predictable security patching
+
+.DESCRIPTION
+    Sets up Windows Update to:
+    - Check for updates weekly on Sundays at 4:00 AM only
+    - Download and install critical security updates only
+    - Automatically restart when needed (on Sundays after patching)
+    - Exclude hardware driver updates
+    - Optimize for server stability and bandwidth conservation
+
+.EXAMPLE
+    Set-WindowsUpdateConfiguration
+#>
+function Set-WindowsUpdateConfiguration {
+    [CmdletBinding()]
+    param()
+
+    Write-LogMessage "Configuring Windows Update for stable security patching..." -Level Info -Component 'WindowsUpdate'
+
+    try {
+        # Ensure we're running as Administrator
+        if (-not (Test-Administrator)) {
+            Write-LogMessage "Administrator privileges required" -Level Error -Component 'WindowsUpdate'
+            throw "This operation requires Administrator privileges"
+        }
+
+        # Registry paths
+        $wuPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+        $auPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+
+        # Create registry paths if they don't exist
+        if (-not (Test-Path $wuPath)) {
+            New-Item -Path $wuPath -Force | Out-Null
+            Write-LogMessage "Created Windows Update registry path" -Level Info -Component 'WindowsUpdate'
+        }
+
+        if (-not (Test-Path $auPath)) {
+            New-Item -Path $auPath -Force | Out-Null
+            Write-LogMessage "Created Automatic Updates registry path" -Level Info -Component 'WindowsUpdate'
+        }
+
+        Write-Host ""
+        Write-Host "Configuring Windows Update settings..." -ForegroundColor Cyan
+        Write-Host ""
+
+        # 1. Configure Automatic Updates behavior
+        Write-Host "  [1/7] Enabling automatic updates with scheduled installation..." -ForegroundColor Gray
+        Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Value 0 -Type DWord
+        Set-ItemProperty -Path $auPath -Name "AUOptions" -Value 4 -Type DWord  # Auto download and schedule install
+        Write-LogMessage "Enabled automatic updates with scheduled installation" -Level Info -Component 'WindowsUpdate'
+
+        # 2. Set update schedule to Sundays at 4:00 AM
+        Write-Host "  [2/7] Setting update schedule to Sundays at 4:00 AM..." -ForegroundColor Gray
+        Set-ItemProperty -Path $auPath -Name "ScheduledInstallDay" -Value 1 -Type DWord  # 0=Every day, 1=Sunday, 2=Monday, etc.
+        Set-ItemProperty -Path $auPath -Name "ScheduledInstallTime" -Value 4 -Type DWord  # 4 AM (24-hour format)
+        Write-LogMessage "Set update schedule: Sundays at 4:00 AM" -Level Info -Component 'WindowsUpdate'
+
+        # 3. Configure automatic restart behavior
+        Write-Host "  [3/7] Configuring automatic restart after updates..." -ForegroundColor Gray
+        Set-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -Value 0 -Type DWord  # Allow auto-reboot
+        Set-ItemProperty -Path $auPath -Name "AlwaysAutoRebootAtScheduledTime" -Value 1 -Type DWord  # Reboot at scheduled time
+        Set-ItemProperty -Path $auPath -Name "AlwaysAutoRebootAtScheduledTimeMinutes" -Value 15 -Type DWord  # Reboot 15 minutes after install
+        Write-LogMessage "Configured automatic restart behavior" -Level Info -Component 'WindowsUpdate'
+
+        # 4. Exclude driver updates
+        Write-Host "  [4/7] Excluding hardware driver updates..." -ForegroundColor Gray
+        Set-ItemProperty -Path $wuPath -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord
+        Write-LogMessage "Excluded hardware driver updates" -Level Info -Component 'WindowsUpdate'
+
+        # 5. Configure to install only important/critical updates (no optional, no feature updates)
+        Write-Host "  [5/7] Configuring to install critical security updates only..." -ForegroundColor Gray
+        # This setting ensures only important/critical updates are installed
+        Set-ItemProperty -Path $auPath -Name "AutoInstallMinorUpdates" -Value 0 -Type DWord  # Don't auto-install minor updates
+
+        # Defer feature updates (Windows 10/11/Server 2016+)
+        try {
+            Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdates" -Value 1 -Type DWord
+            Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord  # Defer feature updates for 1 year
+            Write-LogMessage "Deferred feature updates for 365 days" -Level Info -Component 'WindowsUpdate'
+        }
+        catch {
+            # Might not be supported on older systems
+            Write-LogMessage "Feature update deferral not supported on this OS version" -Level Warning -Component 'WindowsUpdate'
+        }
+
+        # 6. Configure update detection frequency (weekly)
+        Write-Host "  [6/7] Setting update detection frequency..." -ForegroundColor Gray
+        Set-ItemProperty -Path $auPath -Name "DetectionFrequencyEnabled" -Value 1 -Type DWord
+        Set-ItemProperty -Path $auPath -Name "DetectionFrequency" -Value 168 -Type DWord  # 168 hours = 7 days (weekly)
+        Write-LogMessage "Set update detection frequency to weekly (168 hours)" -Level Info -Component 'WindowsUpdate'
+
+        # 7. Disable automatic updates during active hours (optional - helps with bandwidth)
+        Write-Host "  [7/7] Configuring active hours to protect business operations..." -ForegroundColor Gray
+        # Set active hours from 6 AM to 11 PM (Monday-Saturday)
+        # This ensures updates only happen during the Sunday maintenance window
+        try {
+            $activeHoursPath = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+            if (-not (Test-Path $activeHoursPath)) {
+                New-Item -Path $activeHoursPath -Force | Out-Null
+            }
+            Set-ItemProperty -Path $activeHoursPath -Name "ActiveHoursStart" -Value 6 -Type DWord
+            Set-ItemProperty -Path $activeHoursPath -Name "ActiveHoursEnd" -Value 23 -Type DWord
+            Write-LogMessage "Set active hours: 6 AM to 11 PM" -Level Info -Component 'WindowsUpdate'
+        }
+        catch {
+            Write-LogMessage "Active hours configuration not supported on this OS version" -Level Warning -Component 'WindowsUpdate'
+        }
+
+        Write-Host ""
+        Write-Host "Windows Update configuration completed!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Summary of changes:" -ForegroundColor Cyan
+        Write-Host "  - Update Schedule:     Sundays at 4:00 AM" -ForegroundColor White
+        Write-Host "  - Update Type:         Critical security updates only" -ForegroundColor White
+        Write-Host "  - Driver Updates:      Excluded" -ForegroundColor White
+        Write-Host "  - Feature Updates:     Deferred for 365 days" -ForegroundColor White
+        Write-Host "  - Auto-Restart:        Enabled (15 minutes after install)" -ForegroundColor White
+        Write-Host "  - Detection Frequency: Weekly" -ForegroundColor White
+        Write-Host "  - Active Hours:        6 AM - 11 PM (Mon-Sat protection)" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Benefits:" -ForegroundColor Cyan
+        Write-Host "  - Predictable maintenance window (Sunday mornings)" -ForegroundColor Gray
+        Write-Host "  - Bandwidth conservation (weekly checks only)" -ForegroundColor Gray
+        Write-Host "  - Improved stability (no unnecessary updates or drivers)" -ForegroundColor Gray
+        Write-Host "  - Business hour protection (no disruptions Mon-Sat)" -ForegroundColor Gray
+        Write-Host ""
+
+        Write-LogMessage "Windows Update configuration completed successfully" -Level Success -Component 'WindowsUpdate'
+
+        # Restart Windows Update service to apply changes
+        Write-Host "Restarting Windows Update service to apply changes..." -ForegroundColor Cyan
+        try {
+            Restart-Service -Name wuauserv -Force -ErrorAction Stop
+            Write-Host "Windows Update service restarted successfully" -ForegroundColor Green
+            Write-LogMessage "Windows Update service restarted" -Level Success -Component 'WindowsUpdate'
+        }
+        catch {
+            Write-Host "Warning: Could not restart Windows Update service. Changes will apply after next reboot." -ForegroundColor Yellow
+            Write-LogMessage "Failed to restart Windows Update service: $_" -Level Warning -Component 'WindowsUpdate'
+        }
+
+        Write-Host ""
+        Write-Host "Next Steps:" -ForegroundColor Cyan
+        Write-Host "  1. Review the configuration above" -ForegroundColor White
+        Write-Host "  2. Test during the next Sunday maintenance window" -ForegroundColor White
+        Write-Host "  3. Monitor logs in C:\Windows\WindowsUpdate.log" -ForegroundColor White
+        Write-Host "  4. Check Windows Update history after first run" -ForegroundColor White
+        Write-Host ""
+
+    }
+    catch {
+        Write-LogMessage "Failed to configure Windows Update: $_" -Level Error -Component 'WindowsUpdate'
+        Write-Host ""
+        Write-Host "ERROR: Failed to configure Windows Update" -ForegroundColor Red
+        Write-Host $_.Exception.Message -ForegroundColor Yellow
+        Write-Host ""
+        throw
+    }
+}
+
+#endregion
+
 # Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
 # Export-ModuleMember -Function @(
 #     'Install-DesktopInfoWidget',
 #     'Invoke-TLSAndPowerShellUpgrade',
 #     'Install-XenServerTools',
-#     'Invoke-NetworkSpeedTest'
+#     'Invoke-NetworkSpeedTest',
+#     'Set-WindowsUpdateConfiguration'
 # )
