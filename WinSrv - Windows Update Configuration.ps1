@@ -236,7 +236,7 @@ try {
     Write-Host "  1. Review the configuration summary above" -ForegroundColor White
     Write-Host "  2. Monitor the first Sunday maintenance window (4:00 AM)" -ForegroundColor White
     Write-Host "  3. Check Windows Update history after first run:" -ForegroundColor White
-    Write-Host "     Settings > Update & Security > Windows Update > View update history" -ForegroundColor Gray
+    Write-Host "     Settings > Update `& Security > Windows Update > View update history" -ForegroundColor Gray
     Write-Host "  4. Review logs: C:\Windows\WindowsUpdate.log" -ForegroundColor White
     Write-Host "  5. Verify server stability on Sunday mornings" -ForegroundColor White
     Write-Host ""
