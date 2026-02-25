@@ -317,12 +317,13 @@ function Show-MainMenu {
     Write-Host "  Performance & Updates" -ForegroundColor Cyan
     Write-Host "   [ 9]  Network Speed Test (iperf3)" -ForegroundColor White
     Write-Host "   [10]  Configure Windows Update (Stable Security Patching)" -ForegroundColor White
+    Write-Host "   [11]  Disable Windows Updates (Manual Control Only)" -ForegroundColor White
     Write-Host ""
 
     Write-Host "  System" -ForegroundColor Cyan
-    Write-Host "   [11]  View System Information" -ForegroundColor White
-    Write-Host "   [12]  View Logs" -ForegroundColor White
-    Write-Host "   [13]  Check for Updates" -ForegroundColor White
+    Write-Host "   [12]  View System Information" -ForegroundColor White
+    Write-Host "   [13]  View Logs" -ForegroundColor White
+    Write-Host "   [14]  Check for Updates" -ForegroundColor White
     Write-Host ""
 
     Write-Host "   [ Q]  Quit" -ForegroundColor Gray
@@ -632,11 +633,26 @@ while ($running) {
             }
         }
 
-        '11' { Show-SystemInformation }
+        '11' {
+            Write-Host ""
+            if (Show-Confirmation -Message "DISABLE automatic Windows updates? (Only manual updates will be possible)" -DefaultYes:$false) {
+                try {
+                    Disable-WindowsUpdates
+                    Invoke-Pause
+                }
+                catch {
+                    Write-Host ""
+                    Write-Host "Configuration failed. Check logs for details." -ForegroundColor Red
+                    Invoke-Pause
+                }
+            }
+        }
 
-        '12' { Show-LogViewer }
+        '12' { Show-SystemInformation }
 
-        '13' {
+        '13' { Show-LogViewer }
+
+        '14' {
             Write-Host ""
             Write-Host "Checking for updates..." -ForegroundColor Cyan
             $updateInfo = Test-ToolboxUpdate
