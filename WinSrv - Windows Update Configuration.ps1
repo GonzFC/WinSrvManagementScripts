@@ -96,11 +96,11 @@ Write-Host "    - Monday - Saturday: 6 AM to 11 PM protected" -ForegroundColor G
 Write-Host "    - No updates or restarts during business hours" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Benefits:" -ForegroundColor Yellow
-Write-Host "  ✓ Improved server stability" -ForegroundColor Green
-Write-Host "  ✓ Bandwidth conservation" -ForegroundColor Green
-Write-Host "  ✓ Predictable maintenance window" -ForegroundColor Green
-Write-Host "  ✓ No business hour disruptions" -ForegroundColor Green
-Write-Host "  ✓ Time for Sunday morning stability checks" -ForegroundColor Green
+Write-Host "  [OK] Improved server stability" -ForegroundColor Green
+Write-Host "  [OK] Bandwidth conservation" -ForegroundColor Green
+Write-Host "  [OK] Predictable maintenance window" -ForegroundColor Green
+Write-Host "  [OK] No business hour disruptions" -ForegroundColor Green
+Write-Host "  [OK] Time for Sunday morning stability checks" -ForegroundColor Green
 Write-Host ""
 
 # Confirmation
@@ -144,22 +144,22 @@ try {
     Write-Host "  [1/7] Enabling automatic updates with scheduled installation..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Value 0 -Type DWord
     Set-ItemProperty -Path $auPath -Name "AUOptions" -Value 4 -Type DWord
-    Write-Log "  ✓ Automatic updates enabled with scheduled installation" -Level Success
+    Write-Log "  [OK] Automatic updates enabled with scheduled installation" -Level Success
 
     Write-Host "  [2/7] Setting update schedule to Sundays at 4:00 AM..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "ScheduledInstallDay" -Value 1 -Type DWord  # 1 = Sunday
     Set-ItemProperty -Path $auPath -Name "ScheduledInstallTime" -Value 4 -Type DWord  # 4 AM
-    Write-Log "  ✓ Schedule set: Sundays at 4:00 AM" -Level Success
+    Write-Log "  [OK] Schedule set: Sundays at 4:00 AM" -Level Success
 
     Write-Host "  [3/7] Configuring automatic restart behavior..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -Value 0 -Type DWord
     Set-ItemProperty -Path $auPath -Name "AlwaysAutoRebootAtScheduledTime" -Value 1 -Type DWord
     Set-ItemProperty -Path $auPath -Name "AlwaysAutoRebootAtScheduledTimeMinutes" -Value 15 -Type DWord
-    Write-Log "  ✓ Auto-restart configured (15 minutes after installation)" -Level Success
+    Write-Log "  [OK] Auto-restart configured (15 minutes after installation)" -Level Success
 
     Write-Host "  [4/7] Excluding hardware driver updates..." -ForegroundColor Gray
     Set-ItemProperty -Path $wuPath -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord
-    Write-Log "  ✓ Driver updates excluded" -Level Success
+    Write-Log "  [OK] Driver updates excluded" -Level Success
 
     Write-Host "  [5/7] Configuring to install critical security updates only..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "AutoInstallMinorUpdates" -Value 0 -Type DWord
@@ -168,25 +168,25 @@ try {
     try {
         Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdates" -Value 1 -Type DWord
         Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord
-        Write-Log "  ✓ Feature updates deferred for 365 days" -Level Success
+        Write-Log "  [OK] Feature updates deferred for 365 days" -Level Success
     }
     catch {
-        Write-Log "  ⚠ Feature update deferral not supported on this OS version" -Level Warning
+        Write-Log "  [!] Feature update deferral not supported on this OS version" -Level Warning
     }
 
     Write-Host "  [6/7] Setting update detection frequency to weekly..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "DetectionFrequencyEnabled" -Value 1 -Type DWord
     Set-ItemProperty -Path $auPath -Name "DetectionFrequency" -Value 168 -Type DWord  # 168 hours = 7 days
-    Write-Log "  ✓ Detection frequency: Weekly (168 hours)" -Level Success
+    Write-Log "  [OK] Detection frequency: Weekly (168 hours)" -Level Success
 
     Write-Host "  [7/7] Configuring active hours protection..." -ForegroundColor Gray
     try {
         Set-ItemProperty -Path $activeHoursPath -Name "ActiveHoursStart" -Value 6 -Type DWord
         Set-ItemProperty -Path $activeHoursPath -Name "ActiveHoursEnd" -Value 23 -Type DWord
-        Write-Log "  ✓ Active hours set: 6 AM to 11 PM (Mon-Sat protection)" -Level Success
+        Write-Log "  [OK] Active hours set: 6 AM to 11 PM (Mon-Sat protection)" -Level Success
     }
     catch {
-        Write-Log "  ⚠ Active hours not supported on this OS version" -Level Warning
+        Write-Log "  [!] Active hours not supported on this OS version" -Level Warning
     }
 
     Write-Host ""
@@ -225,10 +225,10 @@ try {
     Write-Host "Restarting Windows Update service to apply changes..." -ForegroundColor Cyan
     try {
         Restart-Service -Name wuauserv -Force -ErrorAction Stop
-        Write-Log "✓ Windows Update service restarted successfully" -Level Success
+        Write-Log "[OK] Windows Update service restarted successfully" -Level Success
     }
     catch {
-        Write-Log "⚠ Could not restart Windows Update service. Changes will apply after next reboot." -Level Warning
+        Write-Log "[!] Could not restart Windows Update service. Changes will apply after next reboot." -Level Warning
     }
 
     Write-Host ""

@@ -100,15 +100,15 @@ Write-Host "    - No unexpected reboots or changes" -ForegroundColor Gray
 Write-Host "    - Maximum control and stability" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Benefits:" -ForegroundColor Yellow
-Write-Host "  ✓ Complete control over update timing" -ForegroundColor Green
-Write-Host "  ✓ No unexpected system reboots" -ForegroundColor Green
-Write-Host "  ✓ Maximum server uptime" -ForegroundColor Green
-Write-Host "  ✓ Install only what you need, when you need it" -ForegroundColor Green
+Write-Host "  [OK] Complete control over update timing" -ForegroundColor Green
+Write-Host "  [OK] No unexpected system reboots" -ForegroundColor Green
+Write-Host "  [OK] Maximum server uptime" -ForegroundColor Green
+Write-Host "  [OK] Install only what you need, when you need it" -ForegroundColor Green
 Write-Host ""
 Write-Host "Responsibilities:" -ForegroundColor Red
-Write-Host "  ✗ You must manually check for security updates regularly" -ForegroundColor Yellow
-Write-Host "  ✗ Critical security patches won't install automatically" -ForegroundColor Yellow
-Write-Host "  ✗ Server may become vulnerable without manual patching" -ForegroundColor Yellow
+Write-Host "  [X] You must manually check for security updates regularly" -ForegroundColor Yellow
+Write-Host "  [X] Critical security patches won't install automatically" -ForegroundColor Yellow
+Write-Host "  [X] Server may become vulnerable without manual patching" -ForegroundColor Yellow
 Write-Host ""
 
 # Confirmation
@@ -150,21 +150,21 @@ try {
     Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Value 1 -Type DWord
     # AUOptions = 2 means "Notify for download and notify for install"
     Set-ItemProperty -Path $auPath -Name "AUOptions" -Value 2 -Type DWord
-    Write-Log "  ✓ Automatic updates disabled" -Level Success
+    Write-Log "  [OK] Automatic updates disabled" -Level Success
 
     Write-Host "  [2/6] Disabling automatic restarts..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "NoAutoRebootWithLoggedOnUsers" -Value 1 -Type DWord
     Set-ItemProperty -Path $auPath -Name "AlwaysAutoRebootAtScheduledTime" -Value 0 -Type DWord
-    Write-Log "  ✓ Automatic restarts disabled" -Level Success
+    Write-Log "  [OK] Automatic restarts disabled" -Level Success
 
     Write-Host "  [3/6] Excluding hardware driver updates..." -ForegroundColor Gray
     Set-ItemProperty -Path $wuPath -Name "ExcludeWUDriversInQualityUpdate" -Value 1 -Type DWord
-    Write-Log "  ✓ Driver updates excluded" -Level Success
+    Write-Log "  [OK] Driver updates excluded" -Level Success
 
     Write-Host "  [4/6] Disabling optional/recommended updates..." -ForegroundColor Gray
     Set-ItemProperty -Path $auPath -Name "AutoInstallMinorUpdates" -Value 0 -Type DWord
     Set-ItemProperty -Path $auPath -Name "IncludeRecommendedUpdates" -Value 0 -Type DWord -ErrorAction SilentlyContinue
-    Write-Log "  ✓ Optional updates disabled" -Level Success
+    Write-Log "  [OK] Optional updates disabled" -Level Success
 
     Write-Host "  [5/6] Deferring feature updates..." -ForegroundColor Gray
     # Defer feature updates (Windows 10/11/Server 2016+)
@@ -172,10 +172,10 @@ try {
         Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdates" -Value 1 -Type DWord
         Set-ItemProperty -Path $wuPath -Name "DeferFeatureUpdatesPeriodInDays" -Value 365 -Type DWord
         Set-ItemProperty -Path $wuPath -Name "BranchReadinessLevel" -Value 32 -Type DWord -ErrorAction SilentlyContinue
-        Write-Log "  ✓ Feature updates deferred for 365 days" -Level Success
+        Write-Log "  [OK] Feature updates deferred for 365 days" -Level Success
     }
     catch {
-        Write-Log "  ⚠ Feature update deferral not supported on this OS version" -Level Warning
+        Write-Log "  [!] Feature update deferral not supported on this OS version" -Level Warning
     }
 
     Write-Host "  [6/6] Disabling Microsoft Update (non-Windows products)..." -ForegroundColor Gray
@@ -189,10 +189,10 @@ try {
             }
         }
         Set-ItemProperty -Path $auPath -Name "AllowMUUpdateService" -Value 0 -Type DWord -ErrorAction SilentlyContinue
-        Write-Log "  ✓ Microsoft Update service disabled" -Level Success
+        Write-Log "  [OK] Microsoft Update service disabled" -Level Success
     }
     catch {
-        Write-Log "  ⚠ Microsoft Update service configuration skipped" -Level Warning
+        Write-Log "  [!] Microsoft Update service configuration skipped" -Level Warning
     }
 
     Write-Host ""
@@ -240,13 +240,13 @@ try {
         try {
             Stop-Service -Name wuauserv -Force -ErrorAction Stop
             Set-Service -Name wuauserv -StartupType Disabled -ErrorAction Stop
-            Write-Log "✓ Windows Update service stopped and disabled" -Level Success
+            Write-Log "[OK] Windows Update service stopped and disabled" -Level Success
             Write-Host ""
             Write-Host "  Service Status:      " -NoNewline -ForegroundColor White
             Write-Host "DISABLED" -ForegroundColor Green
         }
         catch {
-            Write-Log "⚠ Could not disable Windows Update service: $($_.Exception.Message)" -Level Warning
+            Write-Log "[!] Could not disable Windows Update service: $($_.Exception.Message)" -Level Warning
         }
     }
     else {

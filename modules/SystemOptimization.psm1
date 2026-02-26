@@ -110,13 +110,13 @@ function Get-DismAnalysis {
 
     foreach ($line in $output) {
         if ($line -match 'Recom.*Limpieza|Cleanup Recommended') {
-            if ($line -match 'S[ií]|Yes') { $recommended = $true }
+            if ($line -match 'S[ii]|Yes') { $recommended = $true }
         }
         if ($line -match '(Backups?|Copia.*seguridad).*:\s*([\d\.,]+)\s*(KB|MB|GB)') {
             $val = [double]::Parse($Matches[2].Replace(',', '.'))
             $reclaimable += ConvertTo-GB -Value $val -Unit $Matches[3]
         }
-        if ($line -match '(Cache|Cach[eé]).*:\s*([\d\.,]+)\s*(KB|MB|GB)') {
+        if ($line -match '(Cache|Cach[ee]).*:\s*([\d\.,]+)\s*(KB|MB|GB)') {
             $val = [double]::Parse($Matches[2].Replace(',', '.'))
             $reclaimable += ConvertTo-GB -Value $val -Unit $Matches[3]
         }
