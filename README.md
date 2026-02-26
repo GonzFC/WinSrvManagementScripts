@@ -30,6 +30,22 @@ One command to install and run the complete Windows management suite!
   - XCP-ng PV Tools v9.1.100 (recommended for XCP-ng hosts, requires Windows 10 1607+/Server 2016+)
   - XenServer/Citrix VM Tools (compatible with older Windows versions)
 
+### Performance
+- **Network Speed Test**: Peer-to-peer bidirectional bandwidth testing using iperf3
+  - Automatic iperf3 installation (no Visual C++ runtime required)
+  - Upload and download measured separately with 4 parallel TCP streams
+  - Test durations: Quick (5s), Standard (10s), Extended (30s)
+
+### Windows Update Management
+- **Configure Windows Update** (option 10): Stable, predictable security patching
+  - Sunday 4 AM maintenance window
+  - Critical security updates only, no driver or feature updates
+  - 365-day feature update deferral
+- **Disable Windows Updates** (option 11): Full manual control
+  - Disables all automatic update downloads and installations
+  - Optional: completely disable the wuauserv service
+  - Updates remain available for manual installation
+
 ## Requirements
 
 - **PowerShell**: Version 5.1 or higher
@@ -97,7 +113,40 @@ cd C:\Path\To\WinSrvManagementScripts
 .\WinToolbox.ps1
 ```
 
-Navigate through the menu using number keys to select options.
+Navigate through the menu using number keys:
+
+```
+Windows Management Toolbox v1.0.9
+==================================
+
+System Optimization:
+  [1] Reclaim Disk Space
+  [2] Disable Backgrounds and Animations
+
+Remote Access:
+  [3] Install Tailscale VPN
+  [4] Install Jump Desktop Connect
+
+Security & Privacy:
+  [5] Harden Microsoft Edge
+
+Maintenance:
+  [6] Install Desktop Info Widget
+  [7] Upgrade TLS and PowerShell
+  [8] Install Virtualization Tools (XCP-ng / XenServer)
+
+Performance & Updates:
+  [9]  Network Speed Test (iperf3)
+  [10] Configure Windows Update (Stable Security Patching)
+  [11] Disable Windows Updates (Manual Control Only)
+
+System:
+  [12] View System Information
+  [13] View Logs
+  [14] Check for Updates
+
+  [Q] Quit
+```
 
 ### Updating the Toolbox
 
@@ -254,6 +303,39 @@ Invoke-Expression $moduleContent
 - No cross-module Import-Module statements needed
 - Export-ModuleMember commented out (not needed with Invoke-Expression)
 
+### Syntax Errors in Windows Update Scripts
+
+**Symptoms** (after editing on macOS):
+- "Missing string terminator"
+- "Missing closing brace"
+- "Output stream already redirected"
+- All errors cascade from a single line far above the actual problem
+
+**Root Cause:**
+Scripts saved as **UTF-8 without BOM** on macOS are read by PowerShell 5.1 on Windows
+as **Windows-1252**. The UTF-8 byte sequence for `checkmark U+2713` (`0xE2 0x9C 0x93`)
+decodes in Windows-1252 as three characters, the last being a **curly left double-quote
+(0x93)**. That stray quote terminates any string it lands inside, producing all the above
+cascading errors. The error message points to a line far below the Unicode character,
+making it appear unrelated.
+
+**Rule:** Files without a UTF-8 BOM must contain **only ASCII characters** (codepoints
+0-127). Use `[OK]`, `[X]`, `[!]` instead of `checkmark`, `ballot X`, `warning sign`.
+
+**Check for Unicode in your files:**
+```powershell
+# On macOS/Linux
+python3 -c "
+import glob
+for f in glob.glob('**/*.ps1', recursive=True) + glob.glob('**/*.psm1', recursive=True):
+    chars = {repr(c) for line in open(f, encoding='utf-8') for c in line if ord(c) > 127}
+    if chars: print(f, chars)
+"
+```
+
+**Files with `\ufeff` (BOM) are safe** - PowerShell 5.1 will correctly read them as UTF-8
+and Unicode symbols will display properly.
+
 ### Installation Issues
 
 **Problem: Installer fails to download**
@@ -279,6 +361,9 @@ When adding new functionality:
 5. **Important**: Do not use `$PSScriptRoot` - use `$Global:ToolboxRoot` instead
 6. **Important**: Do not add `Import-Module` statements between modules
 7. **Important**: Do not use `Export-ModuleMember` in .psm1 files
+8. **Important**: Use only ASCII characters (0-127) in `.ps1` and `.psm1` files that
+   do NOT have a UTF-8 BOM. Unicode symbols (`checkmark`, `arrow`, `bullet`) will
+   corrupt string parsing on Windows PowerShell 5.1. Use `[OK]`, `[X]`, `[!]`, `->` instead.
 
 ### Development Notes
 

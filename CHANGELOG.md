@@ -5,6 +5,102 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-02-25
+
+### Fixed
+- **CRITICAL**: Fixed root cause of all PowerShell parsing errors in Windows Update scripts
+- Replaced all non-ASCII Unicode characters with ASCII equivalents in scripts lacking UTF-8 BOM
+
+### Root Cause
+Files saved as UTF-8 without BOM on macOS are read by PowerShell 5.1 on Windows using
+Windows-1252 encoding. The UTF-8 byte sequence for checkmark U+2713 (0xE2 0x9C 0x93)
+decodes in Windows-1252 as `a-circumflex` + `oe-ligature` + LEFT-DOUBLE-QUOTE (0x93).
+That stray curly-quote character terminates strings mid-line, causing ALL cascading errors:
+- "Missing string terminator"
+- "Missing closing brace"
+- "Output stream already redirected"
+
+### Changed
+- `WinSrv - Disable Windows Updates.ps1`: 17 replacements (`[OK]`, `[X]`, `[!]`)
+- `WinSrv - Windows Update Configuration.ps1`: 16 replacements (`[OK]`, `[!]`)
+- `modules/SystemOptimization.psm1`: 2 replacements (accented chars to ASCII)
+
+### Lesson Learned
+When editing PowerShell scripts on macOS for Windows targets:
+- **Do NOT** use Unicode symbols (checkmarks, arrows, bullets) without a UTF-8 BOM
+- **DO** use only ASCII characters for text in double-quoted strings
+- Files with existing BOM (`\ufeff`) are safe to use Unicode in
+- Encoding mismatches produce misleading errors far from the actual problem character
+
+---
+
+## [1.0.8] - 2026-02-01
+
+### Added
+- **Disable Windows Updates** script (menu option 11) - standalone script for complete
+  manual control over Windows Update, disabling all automatic updates
+- `WinSrv - Disable Windows Updates.ps1` standalone script with interactive wizard
+
+### Changed
+- **Menu refactored** from 2-level hierarchy to single flat numbered list (1-14)
+- All menu options now directly accessible from main menu without submenus
+- Menu categories shown as visual headers for readability
+
+### Technical Details
+- `Disable-WindowsUpdates` function in Maintenance.psm1 calls external script
+- Configures registry keys for NoAutoUpdate, AUOptions, deferred feature updates
+- Optional: disable wuauserv service entirely
+
+---
+
+## [1.0.7] - 2026-01-15
+
+### Added
+- **Configure Windows Update** script (menu option 10) - stable security patching
+  on a predictable Sunday 4 AM maintenance window
+- `WinSrv - Windows Update Configuration.ps1` standalone script
+- `Set-WindowsUpdateConfiguration` function in Maintenance.psm1
+
+### Changed
+- Windows Update options added to main menu (options 10 and 11)
+
+### Technical Details
+- Configures Group Policy registry keys for controlled update behavior
+- Sunday 4 AM schedule with 15-minute reboot window
+- Defers feature updates 365 days
+- Excludes hardware driver updates
+- Weekly detection frequency (168 hours)
+
+---
+
+## [1.0.6] - 2025-01-10
+
+### Added
+- **Network Speed Test** using iperf3 (menu option 9)
+- **Performance menu** category added
+- Automatic iperf3 installation from ar51an/iperf3-win-builds (GitHub)
+- Peer-to-peer bidirectional testing (upload + download)
+- Three test duration presets: Quick (5s), Standard (10s), Extended (30s)
+- TCP connectivity pre-test on port 5201 before running test
+- Helpful firewall setup instructions when peer unreachable
+- Comprehensive JSON output parsing for bandwidth metrics
+
+### Technical Details
+- iperf3 installed to `C:\ProgramData\iperf3\`
+- Static build with cygwin1.dll (no Visual C++ runtime needed)
+- 4 parallel TCP streams for accurate throughput testing
+- GitHub API download with fallback to v3.17.1
+
+### Debugging Journey (15 Commits)
+- Abandoned winget (0x80073CF0 error on Windows Server - AppxPackage limitation)
+- Abandoned iperf.fr v3.1.3 (2016 build, missing Visual C++ runtime)
+- Switched to ar51an/iperf3-win-builds (statically linked, modern)
+- Root cause for silent failure: missing cygwin1.dll dependency
+- Fix: copy ALL files from archive, not just iperf3.exe
+- Removed "Internet" test mode (public servers always busy)
+
+---
+
 ## [1.0.5] - 2024-12-24
 
 ### Fixed
@@ -171,7 +267,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| 1.0.5 | 2024-12-24 | ✅ **STABLE** - Fixed module loading with Invoke-Expression |
+| 1.0.9 | 2026-02-25 | [STABLE] Fixed Unicode encoding bug (root cause of all parse errors) |
+| 1.0.8 | 2026-02-01 | Disable Windows Updates (option 11), flat menu refactor |
+| 1.0.7 | 2026-01-15 | Configure Windows Update (option 10), Sunday maintenance window |
+| 1.0.6 | 2025-01-10 | Network Speed Test with iperf3 (option 9) |
+| 1.0.5 | 2024-12-24 | [STABLE] Fixed module loading with Invoke-Expression |
 | 1.0.4 | 2024-12-24 | Switched to Invoke-Expression for module loading |
 | 1.0.3 | 2024-12-24 | Removed Export-ModuleMember from modules |
 | 1.0.2 | 2024-12-24 | Attempted dot-sourcing approach |
