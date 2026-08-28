@@ -259,8 +259,10 @@ function Install-WSBReporter {
         -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$($script:WSBReporterScript)`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $trigger.Delay = 'PT2M'
+    # NOTE: [TimeSpan]::MaxValue serializes to P99999999DT... which Task Scheduler
+    # rejects ("value ... out of range"); use a bounded 10-year duration instead.
     $repetition = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) -RepetitionDuration ([TimeSpan]::MaxValue)
+        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) -RepetitionDuration (New-TimeSpan -Days 3650)
     $trigger.Repetition = $repetition.Repetition
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `

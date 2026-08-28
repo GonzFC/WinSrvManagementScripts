@@ -5,6 +5,17 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-08-28
+
+### Fixed
+- WSB Reporter scheduled task failed to register: `[TimeSpan]::MaxValue` as
+  RepetitionDuration serializes to `P99999999DT...`, which Task Scheduler rejects
+  ("value ... out of range"). Bounded 10-year duration used instead.
+- Bootstrap installer (xscp): unique temp paths per run - two concurrent installer
+  runs (in-app updater + manual one-liner) collided on shared %TEMP% paths and one
+  died with "Access is denied"; also upgrade-in-place (copy-over) so updating from
+  inside the running toolbox works.
+
 ## [1.1.0] - 2026-08-28
 
 ### Added
