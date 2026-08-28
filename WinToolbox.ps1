@@ -33,6 +33,21 @@ $script:ToolboxVersion = '1.0.9'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
+# Distribution source: when installed from an xscp runner (internal distribution),
+# distribution.json next to this script holds the base URL to check for updates.
+# Falls back to the GitHub raw URLs (requires the repo to be reachable).
+function Get-DistributionBase {
+    try {
+        $distFile = Join-Path $Global:ToolboxRoot 'distribution.json'
+        if (Test-Path $distFile) {
+            $dist = Get-Content -Path $distFile -Raw | ConvertFrom-Json
+            if ($dist.BaseUrl) { return $dist.BaseUrl.TrimEnd('/') }
+        }
+    }
+    catch { }
+    return "https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch"
+}
+
 # Script root and module path
 $ScriptRoot = $PSScriptRoot
 $ModulePath = Join-Path $ScriptRoot 'modules'
@@ -155,8 +170,8 @@ function Test-ToolboxUpdate {
         # Enable TLS 1.2
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-        # Get latest version from GitHub
-        $versionUrl = "https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/version.txt"
+        # Get latest version from the distribution source (xscp or GitHub)
+        $versionUrl = "$(Get-DistributionBase)/version.txt"
         $latestVersion = (Invoke-WebRequest -Uri $versionUrl -UseBasicParsing -TimeoutSec 5).Content.Trim()
 
         # Compare versions
@@ -206,8 +221,8 @@ function Invoke-ToolboxUpdate {
         # Enable TLS 1.2
         [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-        # Download and run installer
-        $installerUrl = "https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/install.ps1"
+        # Download and run installer from the distribution source (xscp or GitHub)
+        $installerUrl = "$(Get-DistributionBase)/install.ps1"
 
         Write-Host "Downloading latest installer..." -ForegroundColor Cyan
         $installerScript = Invoke-RestMethod -Uri $installerUrl -UseBasicParsing
@@ -232,7 +247,7 @@ function Invoke-ToolboxUpdate {
         Write-Host $_.Exception.Message -ForegroundColor Yellow
         Write-Host ""
         Write-Host "You can manually update by running:" -ForegroundColor Cyan
-        Write-Host "  iex (irm https://raw.githubusercontent.com/$script:ToolboxRepo/$script:ToolboxBranch/install.ps1)" -ForegroundColor White
+        Write-Host "  iex (irm $(Get-DistributionBase)/install.ps1)" -ForegroundColor White
         Write-Host ""
         Invoke-Pause
     }
