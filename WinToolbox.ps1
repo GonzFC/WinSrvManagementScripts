@@ -69,7 +69,7 @@ Get-ChildItem -Path $ModulePath -Filter "*.psm1" -File | Unblock-File -ErrorActi
 
 # Load all modules by reading content and executing with Invoke-Expression
 # This ensures functions are loaded directly into the script's scope
-$modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance')
+$modules = @('Common', 'SystemOptimization', 'SecurityPrivacy', 'RemoteAccess', 'Maintenance', 'Monitoring')
 
 foreach ($module in $modules) {
     $moduleFile = Join-Path $ModulePath "$module.psm1"
@@ -90,6 +90,7 @@ foreach ($module in $modules) {
                 'SecurityPrivacy' { 'Set-EdgePrivacySettings' }
                 'RemoteAccess' { 'Install-Tailscale' }
                 'Maintenance' { 'Invoke-NetworkSpeedTest' }
+                'Monitoring' { 'Install-WSBReporter' }
             }
 
             if (Get-Command $testFunction -ErrorAction SilentlyContinue) {
@@ -318,6 +319,11 @@ function Show-MainMenu {
     Write-Host "   [ 9]  Network Speed Test (iperf3)" -ForegroundColor White
     Write-Host "   [10]  Configure Windows Update (Stable Security Patching)" -ForegroundColor White
     Write-Host "   [11]  Disable Windows Updates (Manual Control Only)" -ForegroundColor White
+    Write-Host ""
+
+    Write-Host "  Monitoring and Management" -ForegroundColor Cyan
+    Write-Host "   [15]  Enable WinRM Management (remote control from xscp)" -ForegroundColor White
+    Write-Host "   [16]  Install Backup Reporter (WSB status -> xscp)" -ForegroundColor White
     Write-Host ""
 
     Write-Host "  System" -ForegroundColor Cyan
@@ -672,6 +678,46 @@ while ($running) {
                 Write-Host ""
                 Invoke-Pause
             }
+        }
+
+        '15' {
+            Write-Host ""
+            Write-Host "Enable WinRM Management" -ForegroundColor Cyan
+            Write-Host "Lets a management host (your xscp runner / announcer) run remote PowerShell." -ForegroundColor Gray
+            Write-Host ""
+            $allowed = Read-Host "Allowed source IPs/CIDRs (comma-separated, e.g. 10.188.81.240,10.188.81.252)"
+            Write-Host ""
+            $useHttps = Show-Confirmation -Message "Create an HTTPS listener (self-signed cert)?" -DefaultYes:$false
+            Write-Host ""
+            if (Show-Confirmation -Message "Enable WinRM now (hardened: Basic off, unencrypted off)?" -DefaultYes) {
+                $params = @{}
+                if (-not [string]::IsNullOrWhiteSpace($allowed)) {
+                    $params['AllowedSource'] = ($allowed -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+                }
+                if ($useHttps) { $params['Https'] = $true }
+                Enable-WinRMManagement @params
+            }
+            Invoke-Pause
+        }
+
+        '16' {
+            Write-Host ""
+            Write-Host "Install Backup Reporter (Windows Server Backup -> xscp)" -ForegroundColor Cyan
+            Write-Host "Pushes this server's WSB status to the xscp dashboard on a schedule." -ForegroundColor Gray
+            Write-Host ""
+            $xscpUrl = Read-Host "xscp ingest URL (e.g. http://xscp.ait.mesker.us:8899/ingest/wsb)"
+            $token = Read-Host "Ingest token (from xscp: /opt/hwmon/etc/ingest.token)"
+            $intervalRaw = Read-Host "Report interval in minutes (default: 15)"
+            $interval = 15
+            if (-not [string]::IsNullOrWhiteSpace($intervalRaw)) { $interval = [int]$intervalRaw }
+            Write-Host ""
+            if (-not [string]::IsNullOrWhiteSpace($xscpUrl) -and -not [string]::IsNullOrWhiteSpace($token)) {
+                Install-WSBReporter -XscpUrl $xscpUrl -Token $token -IntervalMinutes $interval
+            }
+            else {
+                Write-Host "URL and token are both required." -ForegroundColor Yellow
+            }
+            Invoke-Pause
         }
 
         'Q' { $running = $false }

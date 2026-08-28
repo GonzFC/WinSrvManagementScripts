@@ -20,6 +20,15 @@ One command to install and run the complete Windows management suite!
 - **Tailscale VPN**: Automated installation and configuration with unattended mode
 - **Jump Desktop Connect**: Remote desktop solution installer with RDP tunneling
 
+### Monitoring & Management
+- **WSB Reporter** (option 16): pushes this server's **Windows Server Backup** status
+  to a central "xscp" runner's ingest endpoint on a schedule, so backup health for the
+  whole fleet shows up in one dashboard with alerts. Push-based (outbound HTTP + Bearer
+  token over the VPN) - no inbound WinRM and no Windows credentials stored off-box.
+- **Enable WinRM Management** (option 15): turns on WinRM *hardened* for remote control
+  from a management host (Basic auth off, unencrypted off, Negotiate/Kerberos, optional
+  self-signed HTTPS listener, firewall scoped to your xscp/announcer IPs).
+
 ### Security & Privacy
 - **Edge Browser Hardening**: Privacy-focused configuration with about:blank homepage, DuckDuckGo search, disabled MSN feed, and minimal tracking
 
@@ -140,6 +149,10 @@ Performance & Updates:
   [10] Configure Windows Update (Stable Security Patching)
   [11] Disable Windows Updates (Manual Control Only)
 
+Monitoring & Management:
+  [15] Enable WinRM Management (remote control from xscp)
+  [16] Install Backup Reporter (WSB status -> xscp)
+
 System:
   [12] View System Information
   [13] View Logs
@@ -190,8 +203,9 @@ The toolbox uses a modular architecture for easy maintenance:
 - **Common.psm1**: Shared utilities (logging, admin checks, OS detection, UI helpers)
 - **SystemOptimization.psm1**: Disk cleanup and UI optimization functions
 - **SecurityPrivacy.psm1**: Browser hardening and privacy configurations
-- **RemoteAccess.psm1**: Remote access solution installers
+- **RemoteAccess.psm1**: Remote access solution installers (Tailscale, Jump Desktop, WinRM)
 - **Maintenance.psm1**: System maintenance and upgrade tools
+- **Monitoring.psm1**: WSB Reporter - pushes Windows Server Backup status to the xscp runner
 
 ### Why Modular?
 

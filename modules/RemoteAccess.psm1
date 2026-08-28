@@ -339,8 +339,136 @@ function Install-JumpDesktopConnect {
 
 #endregion
 
+#region WinRM Management
+
+<#
+.SYNOPSIS
+    Enables WinRM for remote management, hardened for a management-plane host
+    (e.g. the site's xscp runner / subnet announcer over the tailnet).
+.DESCRIPTION
+    Enables PSRemoting, then hardens: disables Basic auth and unencrypted traffic,
+    keeps Negotiate/Kerberos, optionally stands up an HTTPS listener with a
+    self-signed certificate, and scopes the WinRM firewall rules to only the
+    allowed source addresses (the management hosts). Idempotent.
+
+    Reporting of backup status does NOT depend on this - that path is an outbound
+    push (see Monitoring.psm1 / Install-WSBReporter). WinRM is the separate,
+    inbound remote-control capability; enable it deliberately and scoped.
+.PARAMETER AllowedSource
+    IPs/CIDRs permitted to reach WinRM (e.g. the xscp + announcer addresses).
+    Strongly recommended. If omitted, the firewall scope is left unchanged and a
+    warning is logged.
+.PARAMETER Https
+    Also create an HTTPS (5986) listener with a self-signed cert.
+.PARAMETER DisableHttp
+    Remove the HTTP (5985) listener after setup (use with -Https).
+#>
+function Enable-WinRMManagement {
+    [CmdletBinding()]
+    param(
+        [string[]]$AllowedSource = @(),
+        [switch]$Https,
+        [switch]$DisableHttp
+    )
+
+    Write-LogMessage "Enabling WinRM management (hardened)..." -Level Info -Component 'WinRM'
+
+    # 1) Enable PSRemoting / WinRM service.
+    try {
+        Enable-PSRemoting -Force -SkipNetworkProfileCheck -ErrorAction Stop | Out-Null
+    }
+    catch {
+        Write-LogMessage "Enable-PSRemoting failed ($_), falling back to winrm quickconfig" -Level Warning -Component 'WinRM'
+        & winrm.cmd quickconfig -quiet -force 2>&1 | Out-Null
+    }
+    Set-Service -Name WinRM -StartupType Automatic -ErrorAction SilentlyContinue
+    if ((Get-Service WinRM -ErrorAction SilentlyContinue).Status -ne 'Running') {
+        Start-Service WinRM -ErrorAction SilentlyContinue
+    }
+
+    # 2) Harden the service auth: no Basic, no unencrypted, keep Negotiate/Kerberos.
+    try {
+        & winrm.cmd set winrm/config/service/auth '@{Basic="false"}' 2>&1 | Out-Null
+        & winrm.cmd set winrm/config/service/auth '@{Negotiate="true"}' 2>&1 | Out-Null
+        & winrm.cmd set winrm/config/service '@{AllowUnencrypted="false"}' 2>&1 | Out-Null
+        Write-LogMessage "WinRM auth hardened (Basic off, unencrypted off)" -Level Info -Component 'WinRM'
+    }
+    catch { Write-LogMessage "Could not fully harden WinRM auth: $_" -Level Warning -Component 'WinRM' }
+
+    # 3) Optional HTTPS listener with a self-signed certificate.
+    if ($Https) {
+        try {
+            $fqdn = "$env:COMPUTERNAME"
+            try { $fqdn = ([System.Net.Dns]::GetHostByName($env:COMPUTERNAME)).HostName } catch { }
+            $cert = $null
+            if (Get-Command New-SelfSignedCertificate -ErrorAction SilentlyContinue) {
+                $cert = New-SelfSignedCertificate -DnsName $fqdn, $env:COMPUTERNAME `
+                    -CertStoreLocation 'Cert:\LocalMachine\My' -ErrorAction Stop
+            }
+            if ($cert) {
+                $existing = & winrm.cmd enumerate winrm/config/listener 2>&1 | Out-String
+                if ($existing -notmatch 'Transport = HTTPS') {
+                    & winrm.cmd create "winrm/config/Listener?Address=*+Transport=HTTPS" `
+                        "@{Hostname=`"$fqdn`";CertificateThumbprint=`"$($cert.Thumbprint)`"}" 2>&1 | Out-Null
+                }
+                Write-LogMessage "HTTPS listener ready (5986), cert $($cert.Thumbprint)" -Level Success -Component 'WinRM'
+            }
+            else {
+                Write-LogMessage "New-SelfSignedCertificate unavailable (legacy OS); skipping HTTPS listener" -Level Warning -Component 'WinRM'
+            }
+        }
+        catch { Write-LogMessage "HTTPS listener setup failed: $_" -Level Warning -Component 'WinRM' }
+    }
+
+    # 4) Scope the firewall to the management hosts only.
+    if ($AllowedSource.Count -gt 0) {
+        $ruleNames = @('WINRM-HTTP-In-TCP', 'WINRM-HTTPS-In-TCP', 'WINRM-HTTP-In-TCP-PUBLIC')
+        foreach ($rn in $ruleNames) {
+            try {
+                if (Get-Command Set-NetFirewallRule -ErrorAction SilentlyContinue) {
+                    Get-NetFirewallRule -Name $rn -ErrorAction SilentlyContinue |
+                        Set-NetFirewallRule -RemoteAddress $AllowedSource -ErrorAction SilentlyContinue
+                }
+            }
+            catch { }
+        }
+        # Ensure an explicit scoped allow rule exists for 5985/5986.
+        try {
+            if (Get-Command New-NetFirewallRule -ErrorAction SilentlyContinue) {
+                if (-not (Get-NetFirewallRule -DisplayName 'VLABS WinRM (scoped)' -ErrorAction SilentlyContinue)) {
+                    $ports = if ($Https) { @(5985, 5986) } else { @(5985) }
+                    New-NetFirewallRule -DisplayName 'VLABS WinRM (scoped)' -Direction Inbound -Action Allow `
+                        -Protocol TCP -LocalPort $ports -RemoteAddress $AllowedSource -ErrorAction SilentlyContinue | Out-Null
+                }
+            }
+        }
+        catch { Write-LogMessage "Could not create scoped firewall rule: $_" -Level Warning -Component 'WinRM' }
+        Write-LogMessage "WinRM firewall scoped to: $($AllowedSource -join ', ')" -Level Success -Component 'WinRM'
+    }
+    else {
+        Write-LogMessage "No -AllowedSource given: WinRM firewall scope UNCHANGED. Scope it to your xscp/announcer IPs." -Level Warning -Component 'WinRM'
+    }
+
+    # 5) Optionally drop the HTTP listener once HTTPS is up.
+    if ($DisableHttp -and $Https) {
+        try { & winrm.cmd delete "winrm/config/Listener?Address=*+Transport=HTTP" 2>&1 | Out-Null } catch { }
+        Write-LogMessage "HTTP listener removed (HTTPS only)" -Level Info -Component 'WinRM'
+    }
+
+    Write-Host ""
+    Write-Host "WinRM management enabled." -ForegroundColor Green
+    Write-Host "  Auth:      Negotiate/Kerberos (Basic off, unencrypted off)" -ForegroundColor White
+    Write-Host "  Listener:  $(if ($Https) { 'HTTPS 5986' + $(if ($DisableHttp) { ' (HTTP removed)' } else { ' + HTTP 5985' }) } else { 'HTTP 5985' })" -ForegroundColor White
+    Write-Host "  Firewall:  $(if ($AllowedSource.Count -gt 0) { 'scoped to ' + ($AllowedSource -join ', ') } else { 'UNCHANGED - scope it!' })" `
+        -ForegroundColor $(if ($AllowedSource.Count -gt 0) { 'White' } else { 'Yellow' })
+    Write-Host ""
+}
+
+#endregion
+
 # Export functions (only used when loaded with Import-Module, not needed for dot-sourcing)
 # Export-ModuleMember -Function @(
 #     'Install-Tailscale',
-#     'Install-JumpDesktopConnect'
+#     'Install-JumpDesktopConnect',
+#     'Enable-WinRMManagement'
 # )

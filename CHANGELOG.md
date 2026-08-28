@@ -5,6 +5,27 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-28
+
+### Added
+- **New module `Monitoring.psm1` - WSB Reporter** (menu option 16). Pushes this
+  server's Windows Server Backup status (event IDs 4/5/517 over an 8-day window,
+  enriched with `Get-WBSummary` when present) to a central "xscp" runner's ingest
+  endpoint (`POST /ingest/wsb`, Bearer token) on a schedule. Push, not pull: no
+  inbound WinRM and no Windows credentials stored off-box; the runner folds every
+  server into one unified Backups view and alerts on failure or on a server that
+  goes silent. Functions: `Get-WSBStatus`, `Install-WSBReporter`, `Test-WSBReporter`,
+  `Show-WSBStatus`. The ingest token is stored DPAPI-protected (LocalMachine).
+- **`Enable-WinRMManagement`** in `RemoteAccess.psm1` (menu option 15). Enables
+  WinRM hardened for a management host: Basic auth off, unencrypted off,
+  Negotiate/Kerberos kept, optional self-signed HTTPS listener, and the WinRM
+  firewall scoped to the allowed source IPs (your xscp/announcer). Backup reporting
+  does NOT depend on this - WinRM is the separate, inbound remote-control capability.
+
+### Notes
+- The Desktop Info widget's inline WSB reader is unchanged; a future release will
+  converge it onto the shared `Get-WSBStatus` so the logic lives in one place.
+
 ## [1.0.9] - 2026-02-25
 
 ### Fixed
