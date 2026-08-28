@@ -5,6 +5,16 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-08-28
+
+### Fixed
+- WSB Reporter never fired on its 15-minute schedule: the task's only trigger was
+  a boot trigger, whose attached repetition only arms after the NEXT reboot - on a
+  running server the task never ran (caught by the xscp "reporter silent" alert).
+  Now registered with TWO triggers: a time trigger starting immediately (covers
+  the running system) plus the boot trigger (covers restarts), both repeating
+  every 15 minutes.
+
 ## [1.1.1] - 2026-08-28
 
 ### Fixed

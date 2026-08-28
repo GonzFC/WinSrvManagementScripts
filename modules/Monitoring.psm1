@@ -257,19 +257,27 @@ function Install-WSBReporter {
 
     $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
         -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$($script:WSBReporterScript)`""
-    $trigger = New-ScheduledTaskTrigger -AtStartup
-    $trigger.Delay = 'PT2M'
+    # TWO triggers. A boot trigger's repetition only arms AFTER the next reboot
+    # (a task installed on a running server would otherwise never fire - learned
+    # the hard way), so a time trigger starting now covers the running system and
+    # the boot trigger covers restarts.
     # NOTE: [TimeSpan]::MaxValue serializes to P99999999DT... which Task Scheduler
     # rejects ("value ... out of range"); use a bounded 10-year duration instead.
-    $repetition = New-ScheduledTaskTrigger -Once -At (Get-Date) `
-        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) -RepetitionDuration (New-TimeSpan -Days 3650)
-    $trigger.Repetition = $repetition.Repetition
+    $rep = (New-ScheduledTaskTrigger -Once -At (Get-Date) `
+        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)).Repetition
+    $bootTrigger = New-ScheduledTaskTrigger -AtStartup
+    $bootTrigger.Delay = 'PT2M'
+    $bootTrigger.Repetition = $rep
+    $timeTrigger = New-ScheduledTaskTrigger -Once -At ((Get-Date).AddMinutes(2)) `
+        -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
+        -RepetitionDuration (New-TimeSpan -Days 3650)
     $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
-    Register-ScheduledTask -TaskName $script:WSBTaskName -Action $action -Trigger $trigger `
-        -Principal $principal -Settings $settings | Out-Null
+    Register-ScheduledTask -TaskName $script:WSBTaskName -Action $action `
+        -Trigger @($bootTrigger, $timeTrigger) -Principal $principal -Settings $settings | Out-Null
 
     Write-LogMessage "WSB Reporter task registered (every $IntervalMinutes min)" -Level Success -Component 'WSBReporter'
 
