@@ -76,8 +76,12 @@ Write-Host ""
 
 try {
     $zipUrl = "$BaseUrl/WinToolbox.zip"
-    $zipPath = Join-Path $env:TEMP 'WinToolbox.zip'
-    $extractPath = Join-Path $env:TEMP 'WinToolbox_Extract'
+    # Unique temp paths per run: two concurrent installer runs (e.g. the in-app
+    # updater's window plus a manual one-liner) previously collided on shared
+    # %TEMP% paths and one of them died with "Access is denied".
+    $runId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+    $zipPath = Join-Path $env:TEMP "WinToolbox_$runId.zip"
+    $extractPath = Join-Path $env:TEMP "WinToolbox_Extract_$runId"
 
     Write-ColorOutput "Downloading toolbox from xscp..." -Color White
     Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing
