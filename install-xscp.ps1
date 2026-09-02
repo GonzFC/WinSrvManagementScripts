@@ -6,7 +6,7 @@
     One-liner installer served from a VLABS xscp runner (LAN / tailnet only).
 
     Usage:
-        iex (irm http://xscp.ait.mesker.us:8899/toolbox/install.ps1)
+        iex (irm http://<your-site-xscp>:8899/toolbox/install.ps1)
 
     Downloads WinToolbox.zip from the same xscp, installs to C:\ProgramData\WinToolbox,
     and records the distribution source so in-app updates (option 14) come from this
@@ -19,7 +19,8 @@
 $ErrorActionPreference = 'Stop'
 
 # Base URL of the xscp distribution this installer was fetched from.
-$BaseUrl = 'http://xscp.ait.mesker.us:8899/toolbox'
+# BaseUrl is STAMPED PER SITE when this file is deployed to that site's xscp
+$BaseUrl = 'http://XSCP-STAMPED-AT-DEPLOY:8899/toolbox'
 
 function Write-ColorOutput {
     param([string]$Message, [string]$Color = 'White')

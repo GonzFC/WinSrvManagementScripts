@@ -700,7 +700,7 @@ while ($running) {
             Write-Host "Enable WinRM Management" -ForegroundColor Cyan
             Write-Host "Lets a management host (your xscp runner / announcer) run remote PowerShell." -ForegroundColor Gray
             Write-Host ""
-            $allowed = Read-Host "Allowed source IPs/CIDRs (comma-separated, e.g. 10.188.81.240,10.188.81.252)"
+            $allowed = Read-Host "Allowed source IPs/CIDRs (comma-separated, e.g. 192.168.1.240,192.168.1.252)"
             Write-Host ""
             $useHttps = Show-Confirmation -Message "Create an HTTPS listener (self-signed cert)?" -DefaultYes:$false
             Write-Host ""
@@ -720,7 +720,7 @@ while ($running) {
             Write-Host "Install Backup Reporter (Windows Server Backup -> xscp)" -ForegroundColor Cyan
             Write-Host "Pushes this server's WSB status to the xscp dashboard on a schedule." -ForegroundColor Gray
             Write-Host ""
-            $xscpUrl = Read-Host "xscp ingest URL (e.g. http://xscp.ait.mesker.us:8899/ingest/wsb)"
+            $xscpUrl = Read-Host "xscp ingest URL (e.g. http://xscp.yoursite.example:8899/ingest/wsb)"
             $token = Read-Host "Ingest token (from xscp: /opt/hwmon/etc/ingest.token)"
             $intervalRaw = Read-Host "Report interval in minutes (default: 15)"
             $interval = 15
