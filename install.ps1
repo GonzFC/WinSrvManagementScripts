@@ -99,15 +99,17 @@ if ($gitAvailable) {
     Write-ColorOutput "Git detected - using git clone for installation" -Color Green
 
     try {
-        # Remove existing directory if it exists
-        if (Test-Path $installPath) {
-            Write-ColorOutput "Removing existing installation..." -Color Yellow
-            Remove-Item -Path $installPath -Recurse -Force -ErrorAction Stop
-        }
-
-        # Clone repository
+        # Clone to a unique temp dir, then copy over the existing install IN PLACE.
+        # Never delete the install directory: when the update is launched from inside
+        # the running toolbox, that directory is the running shell's working directory
+        # and Remove-Item fails with "Access is denied".
+        $runId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+        $clonePath = Join-Path $env:TEMP "WinToolbox_Clone_$runId"
         Write-ColorOutput "Cloning repository..." -Color Cyan
-        git clone --quiet https://github.com/GonzFC/WinSrvManagementScripts.git $installPath
+        git clone --quiet https://github.com/GonzFC/WinSrvManagementScripts.git $clonePath
+        if (-not (Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath -Force | Out-Null }
+        Copy-Item -Path (Join-Path $clonePath '*') -Destination $installPath -Recurse -Force
+        Remove-Item -Path $clonePath -Recurse -Force -ErrorAction SilentlyContinue
 
         # Unblock all files (removes Zone.Identifier that blocks execution)
         Write-ColorOutput "Unblocking files..." -Color White
@@ -127,8 +129,12 @@ if (-not $gitAvailable) {
 
     try {
         $zipUrl = 'https://github.com/GonzFC/WinSrvManagementScripts/archive/refs/heads/main.zip'
-        $zipPath = Join-Path $env:TEMP 'WinToolbox.zip'
-        $extractPath = Join-Path $env:TEMP 'WinToolbox_Extract'
+        # Unique temp paths per run: concurrent installer runs (in-app updater +
+        # a manual one-liner) collide on shared %TEMP% names and die with
+        # "Access is denied" on each other's locked leftovers.
+        $runId = [Guid]::NewGuid().ToString('N').Substring(0, 8)
+        $zipPath = Join-Path $env:TEMP "WinToolbox_$runId.zip"
+        $extractPath = Join-Path $env:TEMP "WinToolbox_Extract_$runId"
 
         # Download
         Write-ColorOutput "Downloading from GitHub..." -Color White
@@ -136,20 +142,15 @@ if (-not $gitAvailable) {
 
         # Extract
         Write-ColorOutput "Extracting files..." -Color White
-        if (Test-Path $extractPath) {
-            Remove-Item -Path $extractPath -Recurse -Force
-        }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractPath)
 
-        # Move to final location
+        # Upgrade IN PLACE (copy-over). Never delete the install directory: when the
+        # update runs from inside the running toolbox, that directory is in use.
         $extractedFolder = Get-ChildItem $extractPath -Directory | Select-Object -First 1
-
-        if (Test-Path $installPath) {
-            Remove-Item -Path $installPath -Recurse -Force
-        }
-
-        Move-Item -Path $extractedFolder.FullName -Destination $installPath
+        $sourceRoot = if ($extractedFolder) { $extractedFolder.FullName } else { $extractPath }
+        if (-not (Test-Path $installPath)) { New-Item -ItemType Directory -Path $installPath -Force | Out-Null }
+        Copy-Item -Path (Join-Path $sourceRoot '*') -Destination $installPath -Recurse -Force
 
         # Cleanup
         Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
@@ -162,7 +163,7 @@ if (-not $gitAvailable) {
         Write-ColorOutput "Download complete!" -Color Green
     }
     catch {
-        Write-ColorOutput "ERROR: Failed to download toolbox" -Color Red
+        Write-ColorOutput "ERROR: Toolbox install failed" -Color Red
         Write-ColorOutput $_.Exception.Message -Color Red
         Write-Host ""
         pause

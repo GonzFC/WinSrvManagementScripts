@@ -5,6 +5,15 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-08-28
+
+### Fixed
+- GitHub bootstrap installer (install.ps1) ported the two fixes the xscp variant
+  already had: unique per-run %TEMP% paths (concurrent runs collided on shared
+  names -> "Access is denied" / "Acceso denegado" loops) and upgrade IN PLACE via
+  Copy-Item (deleting the install directory fails while the toolbox runs from it).
+  Applies to both the git-clone and ZIP install methods.
+
 ## [1.1.2] - 2026-08-28
 
 ### Fixed
