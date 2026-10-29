@@ -5,6 +5,21 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2026-10-29
+
+### Fixed
+- Desktop Info Widget leaked memory when left running: every 60-second refresh
+  called CIM-based network cmdlets (Get-NetIPAddress, Get-DnsClientServerAddress,
+  Get-NetIPConfiguration), never disposed Windows Server Backup event records or
+  web responses, and let `$Error` fill with full error records. The widget now
+  reads adapters through plain .NET (System.Net.NetworkInformation), disposes
+  every event record / CIM instance / HTTP response, refreshes domain, public IP
+  and WSB every 5 minutes instead of every minute, clears `$Error` and runs the
+  GC after each refresh. As a safety net it relaunches itself if private memory
+  ever passes 400 MB. Re-run "Install Desktop Info Widget" to apply.
+- WinToolbox.ps1 reported itself as v1.0.9 while version.txt said 1.1.3, so
+  every launch offered an update. Both now say 1.1.4.
+
 ## [1.1.3] - 2026-08-28
 
 ### Fixed

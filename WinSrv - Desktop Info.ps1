@@ -24,7 +24,7 @@ $widgetPs1 = @'
 # Desktop Info Widget (runtime)
 # Wallpaper (WorkerW) + 100% click-through + tray | DNS+Gateway | WSB (last 8d: 4,5,517)
 $ErrorActionPreference = "SilentlyContinue"
-$Version = "2025-09-28b"
+$Version = "2026-10-29"
 $WSB_WindowDays = 8
 
 # TLS (for public IP)
@@ -120,109 +120,140 @@ $headerFont  = "Segoe UI"
 $monoFont    = "Consolas"
 
 # ---- Data helpers
+# This process stays up for weeks, so every refresh must leave nothing behind:
+# no CIM-based network cmdlets (Get-NetIPConfiguration & co. grow the process on
+# every call), every IDisposable is disposed, and slow-changing data is cached.
 function Get-PublicIP {
   $urls = @('https://api.ipify.org','https://ifconfig.me/ip','https://ipv4.icanhazip.com')
   foreach ($u in $urls) {
-    try { $res = Invoke-WebRequest -Uri $u -UseBasicParsing -TimeoutSec 4; $ip = ($res.Content).Trim(); if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') { return $ip } } catch {}
+    $resp = $null; $reader = $null
+    try {
+      $req = [System.Net.HttpWebRequest]::Create($u)
+      $req.Timeout = 4000
+      $req.ReadWriteTimeout = 4000
+      $resp   = $req.GetResponse()
+      $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
+      $ip = $reader.ReadToEnd().Trim()
+      if ($ip -match '^\d{1,3}(\.\d{1,3}){3}$') { return $ip }
+    } catch {
+    } finally {
+      if ($reader) { $reader.Dispose() }
+      if ($resp)   { $resp.Close() }
+    }
   }
   'Unavailable'
 }
-function Get-LocalIPv4 {
-  try {
-    Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
-      Where-Object { $_.IPAddress -ne '127.0.0.1' -and -not ($_.IPAddress -like '169.254.*') -and $_.PrefixLength } |
-      Sort-Object InterfaceAlias,IPAddress |
-      Select-Object -ExpandProperty IPAddress
-  } catch {
-    (ipconfig | Select-String 'IPv4 Address.*?:\s*(\d+\.\d+\.\d+\.\d+)').Matches.Value |
-      ForEach-Object { ($_ -split ':')[-1].Trim() }
-  }
-}
-function Get-DNSServers {
-  try {
-    $all = Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop |
-      Where-Object { $_.ServerAddresses -and $_.ServerAddresses.Count -gt 0 } |
-      ForEach-Object { $_.ServerAddresses } | Select-Object -Unique
-    if ($all -and $all.Count -gt 0) { return $all } else { return @('None') }
-  } catch {
-    # Fallback (parse ipconfig /all)
-    $m = (ipconfig /all) -join "`n"
-    $dns = [regex]::Matches($m, 'DNS Servers[^\r\n]*:\s*([\d\.]+)(?:\s*\r?\n\s+([\d\.]+))*')
-    if ($dns.Count -gt 0) {
-      $list = @()
-      foreach ($g in $dns) {
-        $list += $g.Groups[1].Value
-        for ($i=2; $i -lt $g.Groups.Count; $i++) { if ($g.Groups[$i].Value) { $list += $g.Groups[$i].Value } }
-      }
-      return ($list | Where-Object { $_ } | Select-Object -Unique)
+
+# Local IPv4, DNS servers and gateways in one pass over the adapters (plain .NET, no WMI)
+function Get-NetworkInfo {
+  $ips = New-Object System.Collections.Generic.List[string]
+  $dns = New-Object System.Collections.Generic.List[string]
+  $gws = New-Object System.Collections.Generic.List[string]
+  $v4  = [System.Net.Sockets.AddressFamily]::InterNetwork
+  $nics = [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces() | Sort-Object Name
+  foreach ($nic in $nics) {
+    if ($nic.OperationalStatus -ne 'Up' -or $nic.NetworkInterfaceType -eq 'Loopback') { continue }
+    $p = $nic.GetIPProperties()
+    foreach ($a in $p.UnicastAddresses) {
+      $s = $a.Address.ToString()
+      if ($a.Address.AddressFamily -eq $v4 -and $s -notlike '169.254.*' -and -not $ips.Contains($s)) { $ips.Add($s) }
     }
-    @('None')
+    foreach ($a in $p.DnsAddresses) {
+      $s = $a.ToString()
+      if ($a.AddressFamily -eq $v4 -and -not $dns.Contains($s)) { $dns.Add($s) }
+    }
+    foreach ($g in $p.GatewayAddresses) {
+      $s = $g.Address.ToString()
+      if ($g.Address.AddressFamily -eq $v4 -and $s -ne '0.0.0.0' -and -not $gws.Contains($s)) { $gws.Add($s) }
+    }
+  }
+  if ($dns.Count -eq 0) { $dns.Add('None') }
+  if ($gws.Count -eq 0) { $gws.Add('None') }
+  [PSCustomObject]@{
+    LocalIPs   = $ips -join "`n"
+    DNSServers = $dns -join "`n"
+    Gateways   = $gws -join "`n"
   }
 }
-function Get-DefaultGateways {
-  try {
-    $gw = Get-NetIPConfiguration -ErrorAction Stop |
-      Where-Object { $_.IPv4DefaultGateway -and $_.IPv4DefaultGateway.NextHop } |
-      ForEach-Object { $_.IPv4DefaultGateway.NextHop } | Select-Object -Unique
-    if ($gw -and $gw.Count -gt 0) { return $gw } else { return @('None') }
-  } catch {
-    $gws = (ipconfig) | Select-String 'Default Gateway[^\r\n]*:\s*([\d\.]+)'
-    if ($gws) { return ($gws.Matches.Groups[1].Value | Where-Object { $_ } | Select-Object -Unique) }
-    @('None')
-  }
-}
+
 function Get-ComputerDomainSafe {
+  $cs = $null
   try {
     $cs = Get-CimInstance -ClassName Win32_ComputerSystem
     if ($cs.PartOfDomain -and $cs.Domain) { return $cs.Domain }
     elseif ($cs.Workgroup) { return $cs.Workgroup }
-  } catch {}
+  } catch {
+  } finally {
+    if ($cs) { $cs.Dispose() }
+  }
   $env:USERDOMAIN
 }
 
 # ---- WSB: last $WSB_WindowDays days, IDs 4 (success) & 5/517 (failures)
+# EventLogRecord objects hold native handles; they are always disposed here.
 function Get-WSBEventsText {
   param([int]$Days = $WSB_WindowDays)
   $start = (Get-Date).Date.AddDays(-[Math]::Abs($Days))
   $ids   = @(4,5,517)
 
-  $e1 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Microsoft-Windows-Backup'; StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
-  $e2 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Backup';                   StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
-
   $events = @()
-  if ($e1) { $events += $e1 }
-  if ($e2) { $events += $e2 }
+  try {
+    $e1 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Microsoft-Windows-Backup'; StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
+    $e2 = Get-WinEvent -FilterHashtable @{ ProviderName = 'Backup';                   StartTime = $start; Id = $ids } -ErrorAction SilentlyContinue
+    if ($e1) { $events += $e1 }
+    if ($e2) { $events += $e2 }
 
-  if (-not $events -or $events.Count -eq 0) {
-    try {
-      $null = Get-WinEvent -ListLog 'Microsoft-Windows-Backup/Operational' -ErrorAction Stop
-      return @("No WSB events in last $Days days")
-    } catch {
-      return @("No WS Backup configured")
+    if ($events.Count -eq 0) {
+      $cfg = $null
+      try {
+        $cfg = Get-WinEvent -ListLog 'Microsoft-Windows-Backup/Operational' -ErrorAction Stop
+        return @("No WSB events in last $Days days")
+      } catch {
+        return @("No WS Backup configured")
+      } finally {
+        if ($cfg) { $cfg.Dispose() }
+      }
     }
-  }
 
-  $events = $events | Sort-Object TimeCreated -Descending
-  $lines = @()
-  foreach ($e in $events) {
-    $tag = if ($e.Id -eq 4) { 'Success' } else { 'Failure' }
-    $msg = ($e.Message -replace '\s+', ' ').Trim()
-    $firstSentence = ($msg -split '(\. |\r?\n)')[0]
-    $lines += ("{0:yyyy-MM-dd HH:mm} [{1}] (ID {2}) {3}" -f $e.TimeCreated, $tag, $e.Id, $firstSentence)
-    if ($lines.Count -ge 20) { break }
+    $lines = @()
+    foreach ($e in ($events | Sort-Object TimeCreated -Descending)) {
+      $tag = if ($e.Id -eq 4) { 'Success' } else { 'Failure' }
+      $msg = ($e.Message -replace '\s+', ' ').Trim()
+      $firstSentence = ($msg -split '(\. |\r?\n)')[0]
+      $lines += ("{0:yyyy-MM-dd HH:mm} [{1}] (ID {2}) {3}" -f $e.TimeCreated, $tag, $e.Id, $firstSentence)
+      if ($lines.Count -ge 20) { break }
+    }
+    return $lines
+  } finally {
+    foreach ($e in $events) { try { $e.Dispose() } catch {} }
   }
-  return $lines
 }
 
+# Refresh cadence: network every tick (60s, cheap); domain, public IP and WSB
+# change rarely and cost more, so they refresh every $SlowEveryTicks ticks.
+$SlowEveryTicks = 5
+$script:tick    = 0
+$script:slow    = $null
+
 function Get-Info {
+  param([switch]$Full)
+  if ($Full -or -not $script:slow -or ($script:tick % $SlowEveryTicks) -eq 0) {
+    $script:slow = [PSCustomObject]@{
+      Domain   = Get-ComputerDomainSafe
+      PublicIP = Get-PublicIP
+      WSB      = (Get-WSBEventsText) -join "`n"
+    }
+  }
+  $script:tick++
+  $net = Get-NetworkInfo
   [PSCustomObject]@{
     Hostname    = $env:COMPUTERNAME
-    Domain      = Get-ComputerDomainSafe
-    LocalIPs    = (Get-LocalIPv4) -join "`n"
-    DNSServers  = (Get-DNSServers) -join "`n"
-    Gateways    = (Get-DefaultGateways) -join "`n"
-    PublicIP    = Get-PublicIP
-    WSB         = (Get-WSBEventsText) -join "`n"
+    Domain      = $script:slow.Domain
+    LocalIPs    = $net.LocalIPs
+    DNSServers  = $net.DNSServers
+    Gateways    = $net.Gateways
+    PublicIP    = $script:slow.PublicIP
+    WSB         = $script:slow.WSB
     Timestamp   = Get-Date
   }
 }
@@ -333,9 +364,21 @@ $wa = [System.Windows.SystemParameters]::WorkArea
 $window.Left = $wa.Right - $window.Width - 12
 $window.Top  = $wa.Top + 12
 
+# Safety net: if private memory still climbs past this, relaunch a fresh copy
+$MemoryLimitMB = 400
+$SelfPath      = $PSCommandPath
+
+function Restart-Widget {
+  $timer.Stop()
+  try { $global:mutex.ReleaseMutex() | Out-Null } catch {}
+  Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$SelfPath`"" -WindowStyle Hidden
+  $window.Close()
+}
+
 # Refresh
 function Update-UI {
-  $info = Get-Info
+  param([switch]$Full)
+  $info = Get-Info -Full:$Full
   $h.ValueBlock.Text    = $info.Hostname
   $d.ValueBlock.Text    = $info.Domain
   $li.ValueBlock.Text   = $info.LocalIPs
@@ -344,6 +387,18 @@ function Update-UI {
   $pi.ValueBlock.Text   = $info.PublicIP
   $wsbBox.Text          = $info.WSB
   $ts.Text              = "Updated: " + ($info.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))
+
+  # SilentlyContinue still records every error in $Error (up to 256 full records)
+  $Error.Clear()
+  # Reclaim this refresh's garbage now; finalizers release native handles
+  [System.GC]::Collect()
+  [System.GC]::WaitForPendingFinalizers()
+  [System.GC]::Collect()
+
+  $me = [System.Diagnostics.Process]::GetCurrentProcess()
+  $privateMB = $me.PrivateMemorySize64 / 1MB
+  $me.Dispose()
+  if ($SelfPath -and $privateMB -gt $MemoryLimitMB) { Restart-Widget }
 }
 
 # Host behind icons + click-through styles
@@ -372,7 +427,7 @@ $notifyIcon.Text = "Desktop Info (Wallpaper)"
 $menu = New-Object System.Windows.Forms.ContextMenuStrip
 $miRefresh = New-Object System.Windows.Forms.ToolStripMenuItem
 $miRefresh.Text = "Refresh now"
-$miRefresh.add_Click({ Update-UI })
+$miRefresh.add_Click({ Update-UI -Full })
 [void]$menu.Items.Add($miRefresh)
 $miExit = New-Object System.Windows.Forms.ToolStripMenuItem
 $miExit.Text = "Exit"
@@ -382,10 +437,10 @@ $notifyIcon.ContextMenuStrip = $menu
 $window.Closing.Add({ $notifyIcon.Visible = $false; $notifyIcon.Dispose() })
 
 # Initial + timer
-Update-UI
 $timer = New-Object System.Windows.Threading.DispatcherTimer
 $timer.Interval = [TimeSpan]::FromSeconds(60)
 $timer.Add_Tick({ Update-UI })
+Update-UI -Full
 $timer.Start() | Out-Null
 
 [void]$window.ShowDialog()
@@ -436,4 +491,4 @@ Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle 
 
 Write-Host "✅ Desktop Info Widget installed/updated in: $InstallRoot"
 Write-Host "   Autostart: $autostartMethod (Task '$TaskName' or HKCU\\...\\Run)"
-Write-Host "   Shows DNS Servers & Default Gateways; WSB last $() days"
+Write-Host "   Shows DNS Servers & Default Gateways; WSB last 8 days"
