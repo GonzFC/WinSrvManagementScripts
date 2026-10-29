@@ -67,6 +67,21 @@ function Install-DesktopInfoWidget {
     # Configure autostart
     $autostartMethod = Set-WidgetAutostart -TaskName $taskName -ScriptPath $widgetScript
 
+    # Daily toolbox auto-update (SYSTEM task) - also keeps the widget current
+    $autoUpdate = 'Not configured'
+    $updater = Join-Path $Global:ToolboxRoot 'WinSrv - Toolbox Auto Update.ps1'
+    if (Test-Path $updater) {
+        try {
+            & $updater -Install | Out-Null
+            $autoUpdate = "Daily (task 'WinToolbox Auto Update')"
+            Write-LogMessage "Toolbox auto-update task registered" -Level Success -Component 'DesktopInfo'
+        }
+        catch {
+            $autoUpdate = "Not configured ($($_.Exception.Message))"
+            Write-LogMessage "Auto-update task registration failed: $_" -Level Warning -Component 'DesktopInfo'
+        }
+    }
+
     # Restart existing instances
     try {
         $needle = [Regex]::Escape($widgetScript)
@@ -95,7 +110,8 @@ function Install-DesktopInfoWidget {
     Write-Host "Desktop Info Widget installed!" -ForegroundColor Green
     Write-Host "  Location: $installRoot" -ForegroundColor White
     Write-Host "  Autostart: $autostartMethod" -ForegroundColor White
-    Write-Host "  Shows: Network info, Windows Server Backup status" -ForegroundColor White
+    Write-Host "  Shows: Network info, Windows Server Backup status, versions" -ForegroundColor White
+    Write-Host "  Auto-update: $autoUpdate" -ForegroundColor White
     Write-Host "  Control: System tray icon (right-click)" -ForegroundColor White
     Write-Host ""
 }

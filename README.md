@@ -33,7 +33,9 @@ One command to install and run the complete Windows management suite!
 - **Edge Browser Hardening**: Privacy-focused configuration with about:blank homepage, DuckDuckGo search, disabled MSN feed, and minimal tracking
 
 ### Maintenance
-- **Desktop Info Widget**: System and network information overlay on desktop
+- **Desktop Info Widget**: System and network information overlay on desktop; shows the
+  toolbox and widget versions plus the last auto-update, and installs a daily SYSTEM task
+  ("WinToolbox Auto Update") that keeps the toolbox and the widget current
 - **TLS/PowerShell Upgrade**: Modernize legacy Windows systems (2008R2/2012/2012R2) with TLS 1.2, .NET 4.8, and PowerShell 5.1
 - **Virtualization Guest Tools**: Automated installation of XCP-ng Windows PV Tools or XenServer/Citrix Hypervisor VM Tools
   - XCP-ng PV Tools v9.1.100 (recommended for XCP-ng hosts, requires Windows 10 1607+/Server 2016+)
@@ -229,6 +231,7 @@ The toolbox uses a modular architecture for easy maintenance:
 The original standalone scripts are preserved in the repository for reference:
 
 - `WinSrv - Desktop Info.ps1`
+- `WinSrv - Toolbox Auto Update.ps1` (daily toolbox/widget updater; `-Install` registers the task)
 - `WinSrv - 2012R2 SSL TLS Upgrader.ps1`
 - `WinSrv - Jump Desktop Connect Installer.ps1`
 - `WinSrv - Disable Backgrounds and Animations.ps1`

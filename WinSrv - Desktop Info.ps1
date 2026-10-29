@@ -24,7 +24,7 @@ $widgetPs1 = @'
 # Desktop Info Widget (runtime)
 # Wallpaper (WorkerW) + 100% click-through + tray | DNS+Gateway | WSB (last 8d: 4,5,517)
 $ErrorActionPreference = "SilentlyContinue"
-$Version = "2026-10-29"
+$Version = "2026-10-29b"
 $WSB_WindowDays = 8
 
 # TLS (for public IP)
@@ -229,6 +229,29 @@ function Get-WSBEventsText {
   }
 }
 
+# Toolbox version + auto-update status (written daily by the SYSTEM task
+# "WinToolbox Auto Update" - see "WinSrv - Toolbox Auto Update.ps1")
+$ToolboxRoot = Join-Path $env:ProgramData 'WinToolbox'
+function Format-StatusDate($value) {
+  if (-not $value) { return 'never' }
+  try { ([datetime]$value).ToString('yyyy-MM-dd HH:mm') } catch { "$value" }
+}
+function Get-ToolboxStatusText {
+  $verFile = Join-Path $ToolboxRoot 'version.txt'
+  $toolbox = if (Test-Path $verFile) { 'v' + (Get-Content -Path $verFile -Raw).Trim() } else { 'not installed' }
+  $line1 = "WinToolbox $toolbox  |  Desktop Info $Version"
+
+  $line2 = 'Auto-update: not configured'
+  $statusFile = Join-Path $ToolboxRoot 'update-status.json'
+  if (Test-Path $statusFile) {
+    try {
+      $st = Get-Content -Path $statusFile -Raw | ConvertFrom-Json
+      $line2 = "Last update: {0}  |  Checked: {1} ({2})" -f (Format-StatusDate $st.LastUpdate), (Format-StatusDate $st.LastCheck), $st.LastCheckResult
+    } catch { $line2 = 'Auto-update: status unreadable' }
+  }
+  "$line1`n$line2"
+}
+
 # Refresh cadence: network every tick (60s, cheap); domain, public IP and WSB
 # change rarely and cost more, so they refresh every $SlowEveryTicks ticks.
 $SlowEveryTicks = 5
@@ -242,6 +265,7 @@ function Get-Info {
       Domain   = Get-ComputerDomainSafe
       PublicIP = Get-PublicIP
       WSB      = (Get-WSBEventsText) -join "`n"
+      Toolbox  = Get-ToolboxStatusText
     }
   }
   $script:tick++
@@ -254,6 +278,7 @@ function Get-Info {
     Gateways    = $net.Gateways
     PublicIP    = $script:slow.PublicIP
     WSB         = $script:slow.WSB
+    Toolbox     = $script:slow.Toolbox
     Timestamp   = Get-Date
   }
 }
@@ -267,7 +292,7 @@ $window.AllowsTransparency = $true
 $window.Background         = New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($bgColor))
 $window.Opacity            = 0.95
 $window.Width              = 520
-$window.Height             = 720
+$window.SizeToContent      = 'Height'
 $window.ShowInTaskbar      = $false
 $window.Topmost            = $false
 $window.IsHitTestVisible   = $false
@@ -350,6 +375,16 @@ $wsbBox.IsHitTestVisible = $false
 $wsbBox.Text = ""
 $stack.Children.Add($wsbBox) | Out-Null
 
+# Versions + auto-update status
+$ver = New-Object Windows.Controls.TextBlock
+$ver.FontFamily = $headerFont
+$ver.FontSize = 11
+$ver.Foreground = New-Object Windows.Media.SolidColorBrush ([Windows.Media.ColorConverter]::ConvertFromString($mutedColor))
+$ver.Margin = '0,12,0,0'
+$ver.TextWrapping = 'Wrap'
+$ver.IsHitTestVisible = $false
+$stack.Children.Add($ver) | Out-Null
+
 # Timestamp
 $ts = New-Object Windows.Controls.TextBlock
 $ts.FontFamily = $headerFont
@@ -367,6 +402,8 @@ $window.Top  = $wa.Top + 12
 # Safety net: if private memory still climbs past this, relaunch a fresh copy
 $MemoryLimitMB = 400
 $SelfPath      = $PSCommandPath
+# The auto-updater rewrites this file when a new widget version ships
+$SelfStamp     = if ($SelfPath) { (Get-Item -LiteralPath $SelfPath).LastWriteTimeUtc } else { $null }
 
 function Restart-Widget {
   $timer.Stop()
@@ -386,7 +423,8 @@ function Update-UI {
   $gw.ValueBlock.Text   = $info.Gateways
   $pi.ValueBlock.Text   = $info.PublicIP
   $wsbBox.Text          = $info.WSB
-  $ts.Text              = "Updated: " + ($info.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))
+  $ver.Text             = $info.Toolbox
+  $ts.Text              = "Refreshed: " + ($info.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"))
 
   # SilentlyContinue still records every error in $Error (up to 256 full records)
   $Error.Clear()
@@ -398,7 +436,10 @@ function Update-UI {
   $me = [System.Diagnostics.Process]::GetCurrentProcess()
   $privateMB = $me.PrivateMemorySize64 / 1MB
   $me.Dispose()
-  if ($SelfPath -and $privateMB -gt $MemoryLimitMB) { Restart-Widget }
+  if ($SelfPath -and $privateMB -gt $MemoryLimitMB) { Restart-Widget; return }
+  if ($SelfStamp -and (Test-Path -LiteralPath $SelfPath)) {
+    if ((Get-Item -LiteralPath $SelfPath).LastWriteTimeUtc -ne $SelfStamp) { Restart-Widget }
+  }
 }
 
 # Host behind icons + click-through styles
@@ -477,6 +518,14 @@ function Ensure-Autostart {
 }
 $autostartMethod = Ensure-Autostart -TaskName $TaskName -ScriptPath $WidgetScript
 
+# ---------- Daily toolbox auto-update (SYSTEM task; needs admin) ----------
+$autoUpdate = 'not configured'
+$updater = Join-Path $PSScriptRoot 'WinSrv - Toolbox Auto Update.ps1'
+if (Test-Path $updater) {
+  try { & $updater -Install | Out-Null; $autoUpdate = "daily (task 'WinToolbox Auto Update')" }
+  catch { $autoUpdate = "not configured ($($_.Exception.Message))" }
+}
+
 # ---------- Restart any running instance, then launch fresh ----------
 try {
   $needle = [Regex]::Escape($WidgetScript)
@@ -492,3 +541,4 @@ Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle 
 Write-Host "✅ Desktop Info Widget installed/updated in: $InstallRoot"
 Write-Host "   Autostart: $autostartMethod (Task '$TaskName' or HKCU\\...\\Run)"
 Write-Host "   Shows DNS Servers & Default Gateways; WSB last 8 days"
+Write-Host "   Toolbox auto-update: $autoUpdate"

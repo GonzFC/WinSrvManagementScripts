@@ -5,6 +5,25 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-29
+
+### Added
+- Desktop Info Widget shows the installed WinToolbox version, the widget's own
+  version, and the toolbox auto-update status (last update, last check, result).
+- Toolbox auto-update: new standalone script `WinSrv - Toolbox Auto Update.ps1`.
+  Installing the widget (standalone or menu option 6) registers a daily SYSTEM
+  task, "WinToolbox Auto Update" (03:17 + up to 30 min random delay; catches up
+  after downtime), that checks the distribution source (xscp via
+  distribution.json, else GitHub), upgrades C:\ProgramData\WinToolbox in place
+  when a newer version exists, and redeploys the widget runtime when its code
+  changed. Status goes to C:\ProgramData\WinToolbox\update-status.json, the log
+  to C:\VLABS\Maintenance\ToolboxAutoUpdate_yyyy-MM.log.
+- The widget relaunches itself when its script file is replaced, so updates
+  take effect without a logoff.
+
+### Changed
+- Widget window now sizes to its content; footer timestamp renamed "Refreshed".
+
 ## [1.1.4] - 2026-10-29
 
 ### Fixed

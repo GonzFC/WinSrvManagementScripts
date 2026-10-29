@@ -29,7 +29,7 @@ param(
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.1.4'
+$script:ToolboxVersion = '1.2.0'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
