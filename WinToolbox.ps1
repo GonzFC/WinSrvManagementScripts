@@ -16,6 +16,16 @@
     Requires: PowerShell 5.1+, Administrator privileges
     Logs: C:\VLABS\Maintenance\
     Version: See $ToolboxVersion variable
+
+    Every menu action can also run straight from the command line, without the
+    menu:  .\WinToolbox.ps1 -Run <Action> [action parameters]
+    List the actions:  .\WinToolbox.ps1 -Run List   (full reference: README.md)
+
+.EXAMPLE
+    .\WinToolbox.ps1 -Run DesktopInfo
+
+.EXAMPLE
+    .\WinToolbox.ps1 -Run SpeedTest -Peer 10.0.0.5 -Duration 30
 #>
 
 [CmdletBinding()]
@@ -23,13 +33,19 @@ param(
     [switch]$AutoCleanup,
     [int]$DaysInactive = 30,
     [switch]$DeepComponentCleanup,
-    [switch]$SkipUpdateCheck
+    [switch]$SkipUpdateCheck,
+
+    # Run one action without the menu (name or menu number), then exit.
+    # Parameters after it are passed to that action.
+    [string]$Run,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [object[]]$RunArgs
 )
 
 #Requires -Version 5.1
 
 # Version information
-$script:ToolboxVersion = '1.2.0'
+$script:ToolboxVersion = '1.3.0'
 $script:ToolboxRepo = 'GonzFC/WinSrvManagementScripts'
 $script:ToolboxBranch = 'main'
 
@@ -67,7 +83,7 @@ if (-not (Test-Path $ModulePath)) {
 $Global:ToolboxRoot = $ScriptRoot
 
 # Display startup banner
-Clear-Host
+if (-not $Run) { Clear-Host }
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host " Windows Management Toolbox" -ForegroundColor Cyan
@@ -356,7 +372,8 @@ function Show-MainMenu {
 }
 
 function Show-SystemInformation {
-    Clear-Host
+    param([switch]$NoPause)
+    if (-not $NoPause) { Clear-Host }
     Write-Host ""
     Write-Host "======================================" -ForegroundColor Cyan
     Write-Host " System Information" -ForegroundColor Cyan
@@ -392,7 +409,7 @@ function Show-SystemInformation {
     Write-Host "$(Get-FreeSpaceGB -DriveLetter 'C') GB" -ForegroundColor White
 
     Write-Host ""
-    Invoke-Pause
+    if (-not $NoPause) { Invoke-Pause }
 }
 
 function Show-LogViewer {
@@ -460,6 +477,118 @@ function Show-LogViewer {
 
 #endregion
 
+#region Command-line mode (-Run)
+
+# One entry per menu action: CLI name, menu number, what it runs. Kept in step
+# with the menu and the "Command-Line Usage" section of README.md.
+$script:CliActions = [ordered]@{
+    'DiskCleanup'           = @{ Menu = '1';  Help = 'Reclaim disk space  [-DaysInactive 30] [-DeepComponentCleanup] [-DeleteProfiles] [-Schedule]' }
+    'DisableAnimations'     = @{ Menu = '2';  Help = 'Disable backgrounds and animations for all users' }
+    'Tailscale'             = @{ Menu = '3';  Help = 'Install Tailscale  [-AuthKey k] [-LoginServer url] [-AcceptRoutes] [-AdvertiseRoutes cidrs] [-AcceptDNS] [-Hostname n] [-Operator u]' }
+    'JumpDesktop'           = @{ Menu = '4';  Help = 'Install Jump Desktop Connect  -ConnectCode 123456' }
+    'EdgeHardening'         = @{ Menu = '5';  Help = 'Harden Microsoft Edge (privacy + clean homepage)' }
+    'DesktopInfo'           = @{ Menu = '6';  Help = 'Install/update the Desktop Info Widget for all users (+ daily auto-update)' }
+    'TlsUpgrade'            = @{ Menu = '7';  Help = 'Upgrade TLS and PowerShell (legacy systems)  [-UpdateRoots]' }
+    'VMTools'               = @{ Menu = '8';  Help = 'Install VM tools  -Platform XCPng|XenServer [-NoReboot] [-DisableWUDrivers]' }
+    'SpeedTest'             = @{ Menu = '9';  Help = 'iperf3 speed test  -Peer 10.0.0.5 [-Duration 5|10|30]' }
+    'WindowsUpdateConfig'   = @{ Menu = '10'; Help = 'Windows Update: Sundays 4 AM, security only, no drivers' }
+    'DisableWindowsUpdates' = @{ Menu = '11'; Help = 'Disable automatic Windows updates  [-DisableService]' }
+    'SystemInfo'            = @{ Menu = '12'; Help = 'Show system information' }
+    'Logs'                  = @{ Menu = '13'; Help = 'List log files in C:\VLABS\Maintenance' }
+    'Update'                = @{ Menu = '14'; Help = 'Update the toolbox now if a newer version exists  [-Force]' }
+    'WinRM'                 = @{ Menu = '15'; Help = 'Enable hardened WinRM  [-AllowedSource ip,cidr] [-Https] [-DisableHttp]' }
+    'BackupReporter'        = @{ Menu = '16'; Help = 'Install WSB Reporter  -XscpUrl url -Token t [-IntervalMinutes 15]' }
+}
+
+function Show-CliActions {
+    Write-Host ""
+    Write-Host "Usage: .\WinToolbox.ps1 -Run <Action> [parameters]   (Action = name or menu number)" -ForegroundColor Cyan
+    Write-Host ""
+    foreach ($name in $script:CliActions.Keys) {
+        $a = $script:CliActions[$name]
+        Write-Host ("  [{0,2}] {1,-22} {2}" -f $a.Menu, $name, $a.Help)
+    }
+    Write-Host ""
+}
+
+# "-Peer 10.0.0.5 -NoReboot -AllowedSource a,b" -> @{ Peer='10.0.0.5'; NoReboot=$true; ... }
+function ConvertTo-CliParameters {
+    param([object[]]$Arguments)
+    $params = @{}
+    $i = 0
+    while ($i -lt $Arguments.Count) {
+        $token = "$($Arguments[$i])"
+        if ($token -notmatch '^-([A-Za-z][\w]*)(:(.*))?$') { throw "Unexpected argument '$token' (parameters look like -Name value)" }
+        $name = $Matches[1]
+        if ($Matches[2]) { $params[$name] = $Matches[3]; $i++; continue }
+        $next = if ($i + 1 -lt $Arguments.Count) { "$($Arguments[$i + 1])" } else { $null }
+        if ($null -ne $next -and $next -notmatch '^-[A-Za-z]') { $params[$name] = $next; $i += 2 }
+        else { $params[$name] = $true; $i++ }
+    }
+    return $params
+}
+
+function Invoke-CliAction {
+    param([string]$Action, [hashtable]$Params)
+
+    if ($Action -in @('List', 'Help', '?')) { Show-CliActions; return }
+
+    # Accept menu numbers and any letter case
+    $name = $script:CliActions.Keys | Where-Object { $_ -eq $Action -or $script:CliActions[$_].Menu -eq $Action } | Select-Object -First 1
+    if (-not $name) { Show-CliActions; throw "Unknown action '$Action'" }
+    if ($name -notin @('SystemInfo', 'Logs') -and -not (Test-Administrator)) {
+        throw "Administrator privileges are required (open PowerShell as Administrator)"
+    }
+
+    Write-LogMessage "Command-line run: $name $(($Params.Keys | ForEach-Object { "-$_" }) -join ' ')" -Level Info -Component 'CLI'
+
+    switch ($name) {
+        'DiskCleanup' {
+            # Never stop to ask: profiles are only deleted with -DeleteProfiles
+            $delete = [bool]$Params['DeleteProfiles']; $Params.Remove('DeleteProfiles')
+            if ($delete) { $Params['Force'] = $true } else { $Params['SkipProfileDeletion'] = $true }
+            Invoke-DiskSpaceReclamation @Params
+        }
+        'DisableAnimations'     { Disable-BackgroundsAndAnimations @Params }
+        'Tailscale'             { Install-Tailscale @Params }
+        'JumpDesktop' {
+            if (-not $Params['ConnectCode']) { throw "-ConnectCode is required" }
+            Install-JumpDesktopConnect @Params
+        }
+        'EdgeHardening'         { Set-EdgePrivacySettings @Params }
+        'DesktopInfo'           { Install-DesktopInfoWidget @Params }
+        'TlsUpgrade'            { Invoke-TLSAndPowerShellUpgrade @Params }
+        'VMTools' {
+            if (-not $Params['Platform']) { throw "-Platform XCPng or -Platform XenServer is required" }
+            Install-XenServerTools @Params
+        }
+        'SpeedTest' {
+            if (-not $Params['Peer']) { throw "-Peer <IP address> is required" }
+            Invoke-NetworkSpeedTest @Params
+        }
+        'WindowsUpdateConfig'   { Set-WindowsUpdateConfiguration @Params }
+        'DisableWindowsUpdates' { Disable-WindowsUpdates -Unattended @Params }
+        'SystemInfo'            { Show-SystemInformation -NoPause }
+        'Logs' {
+            Get-ChildItem -Path 'C:\VLABS\Maintenance' -Filter '*.log' -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime -Descending |
+                Format-Table @{ n = 'Modified'; e = { $_.LastWriteTime.ToString('yyyy-MM-dd HH:mm') } }, Name, @{ n = 'KB'; e = { [math]::Round($_.Length / 1KB, 1) } } -AutoSize
+        }
+        'Update' {
+            $updater = Join-Path $Global:ToolboxRoot 'WinSrv - Toolbox Auto Update.ps1'
+            & $updater @Params
+            if ($LASTEXITCODE) { throw "Update failed (see C:\VLABS\Maintenance\ToolboxAutoUpdate_*.log)" }
+        }
+        'WinRM' {
+            if ($Params['AllowedSource']) { $Params['AllowedSource'] = @("$($Params['AllowedSource'])" -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+            Enable-WinRMManagement @Params
+        }
+        'BackupReporter'        { Install-WSBReporter @Params }
+    }
+}
+
+#endregion
+
 #region Main Execution
 
 # If called with -AutoCleanup (for scheduled task)
@@ -476,6 +605,24 @@ if ($AutoCleanup) {
 
 # Initialize
 Initialize-Logging
+
+# Command-line mode: run one action, no menu, no prompts, exit code 0/1
+if ($Run) {
+    try {
+        $cliParams = ConvertTo-CliParameters -Arguments $RunArgs
+        # These two are also toolbox parameters, so PowerShell binds them there
+        if ($PSBoundParameters.ContainsKey('DaysInactive')) { $cliParams['DaysInactive'] = $DaysInactive }
+        if ($DeepComponentCleanup) { $cliParams['DeepComponentCleanup'] = $true }
+        Invoke-CliAction -Action $Run -Params $cliParams
+        exit 0
+    }
+    catch {
+        Write-Host ""
+        Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
+        Write-LogMessage "Command-line run '$Run' failed: $_" -Level Error -Component 'CLI'
+        exit 1
+    }
+}
 
 # Check prerequisites
 if (-not (Test-Prerequisites)) {
@@ -506,7 +653,7 @@ if (-not $SkipUpdateCheck) {
         }
         else {
             Write-Host ""
-            Write-Host "You can update later from the main menu (option 13)" -ForegroundColor Gray
+            Write-Host "You can update later from the main menu (option 14)" -ForegroundColor Gray
             Write-Host ""
             Invoke-Pause
         }
@@ -596,10 +743,8 @@ while ($running) {
 
         '6' {
             Write-Host ""
-            if (Show-Confirmation -Message "Install/Update Desktop Info Widget?" -DefaultYes) {
-                Install-DesktopInfoWidget
-                Invoke-Pause
-            }
+            Install-DesktopInfoWidget
+            Invoke-Pause
         }
 
         '7' {

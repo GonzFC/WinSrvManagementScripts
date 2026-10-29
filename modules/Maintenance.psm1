@@ -82,11 +82,13 @@ function Install-DesktopInfoWidget {
         }
     }
 
-    # Restart existing instances
+    # Restart the widget in THIS session. Other users' widgets relaunch themselves
+    # when they see the script file change; users without one get it at next logon.
     try {
         $needle = [Regex]::Escape($widgetScript)
+        $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
         $processes = Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
-            Where-Object { $_.CommandLine -and $_.CommandLine -match $needle }
+            Where-Object { $_.SessionId -eq $session -and $_.CommandLine -and $_.CommandLine -match $needle }
 
         if ($processes) {
             $processes | ForEach-Object {
@@ -122,47 +124,37 @@ function Set-WidgetAutostart {
         [string]$ScriptPath
     )
 
-    $created = $false
+    # All users: one task with an any-user logon trigger and BUILTIN\Users as the
+    # principal - Windows starts the widget in each user's own session at logon.
+    $cmd = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
+    $runValue = "powershell.exe $cmd"
+    $hklmRun = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
+    $hkcuRun = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+
+    # Drop the old per-user Run entry (it would only duplicate the all-users one)
+    Remove-ItemProperty -Path $hkcuRun -Name 'DesktopInfoWidget' -ErrorAction SilentlyContinue
 
     try {
-        # Remove existing task
-        try {
-            Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-        }
-        catch { }
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument `
-            "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
-
+        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $cmd
         $trigger = New-ScheduledTaskTrigger -AtLogOn
+        $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
+        # No time limit (the 72h default would kill the widget) and one instance per user
+        $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel `
+            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
-        try {
-            $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
-                -LogonType Interactive -RunLevel LeastPrivilege
-        }
-        catch {
-            $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
-                -LogonType InteractiveOrPassword -RunLevel LeastPrivilege
-        }
-
-        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal | Out-Null
-        $created = $true
+        Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+            -Principal $principal -Settings $settings -ErrorAction Stop | Out-Null
+        Remove-ItemProperty -Path $hklmRun -Name 'DesktopInfoWidget' -ErrorAction SilentlyContinue
+        return "Scheduled Task (all users)"
     }
     catch {
-        $created = $false
+        Write-LogMessage "All-users task registration failed, using HKLM Run key: $_" -Level Warning -Component 'DesktopInfo'
     }
 
-    # Fallback to registry Run key
-    if (-not $created) {
-        $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-        New-Item -Path $runKey -Force | Out-Null
-        New-ItemProperty -Path $runKey -Name 'DesktopInfoWidget' -PropertyType String -Force `
-            -Value "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`"" | Out-Null
-        return "Registry Run Key"
-    }
-    else {
-        return "Scheduled Task"
-    }
+    New-ItemProperty -Path $hklmRun -Name 'DesktopInfoWidget' -PropertyType String -Force -Value $runValue | Out-Null
+    return "Registry Run Key (all users)"
 }
 
 #endregion
@@ -413,7 +405,10 @@ function Install-XenServerTools {
     [CmdletBinding()]
     param(
         [switch]$NoReboot,
-        [switch]$DisableWUDrivers
+        [switch]$DisableWUDrivers,
+        # Skips the selection prompt (command-line use)
+        [ValidateSet('XCPng', 'XenServer')]
+        [string]$Platform
     )
 
     Write-LogMessage "Starting virtualization tools installer..." -Level Info -Component 'VMTools'
@@ -461,8 +456,14 @@ function Install-XenServerTools {
     }
 
     Write-Host ""
-    Write-Host -NoNewline "Select option [1 or 2]: " -ForegroundColor Cyan
-    $choice = Read-Host
+    if ($Platform) {
+        $choice = if ($Platform -eq 'XCPng') { '1' } else { '2' }
+        Write-Host "Selected: $Platform (-Platform)" -ForegroundColor Cyan
+    }
+    else {
+        Write-Host -NoNewline "Select option [1 or 2]: " -ForegroundColor Cyan
+        $choice = Read-Host
+    }
 
     if ($choice -ne '1' -and $choice -ne '2') {
         Write-LogMessage "Invalid selection: $choice" -Level Error -Component 'VMTools'
@@ -954,7 +955,13 @@ function Install-IPerf3 {
 #>
 function Invoke-NetworkSpeedTest {
     [CmdletBinding()]
-    param()
+    param(
+        # Both skip their prompt (command-line use)
+        [string]$Peer,
+        [ValidateSet(5, 10, 30)]
+        [int]$Duration
+    )
+    $unattended = [bool]$Peer
 
     Write-LogMessage "Starting network speed test wizard..." -Level Info -Component 'NetworkSpeed'
 
@@ -974,8 +981,13 @@ function Invoke-NetworkSpeedTest {
     Write-Host ""
 
     # Get peer IP address
-    Write-Host -NoNewline "Enter peer IP address: " -ForegroundColor Cyan
-    $serverAddress = Read-Host
+    if ($Peer) {
+        $serverAddress = $Peer
+    }
+    else {
+        Write-Host -NoNewline "Enter peer IP address: " -ForegroundColor Cyan
+        $serverAddress = Read-Host
+    }
 
     if ([string]::IsNullOrWhiteSpace($serverAddress)) {
         throw "Peer IP address is required for network speed testing"
@@ -1002,7 +1014,7 @@ function Invoke-NetworkSpeedTest {
             Write-Host "  New-NetFirewallRule -DisplayName 'iperf3' -Direction Inbound -Protocol TCP -LocalPort 5201 -Action Allow" -ForegroundColor Gray
             Write-Host ""
 
-            if (-not (Show-Confirmation -Message "Continue anyway?" -DefaultYes:$false)) {
+            if (-not $unattended -and -not (Show-Confirmation -Message "Continue anyway?" -DefaultYes:$false)) {
                 throw "Peer connectivity test failed - port 5201 not reachable"
             }
         }
@@ -1022,8 +1034,16 @@ function Invoke-NetworkSpeedTest {
     Write-Host "  [2] Standard Test (10 seconds)" -ForegroundColor White
     Write-Host "  [3] Extended Test (30 seconds)" -ForegroundColor White
     Write-Host ""
-    Write-Host -NoNewline "Select duration [1, 2, or 3]: " -ForegroundColor Cyan
-    $durationChoice = Read-Host
+    if ($Duration) {
+        $durationChoice = switch ($Duration) { 5 { '1' } 10 { '2' } 30 { '3' } }
+    }
+    elseif ($unattended) {
+        $durationChoice = '2'
+    }
+    else {
+        Write-Host -NoNewline "Select duration [1, 2, or 3]: " -ForegroundColor Cyan
+        $durationChoice = Read-Host
+    }
 
     $duration = switch ($durationChoice) {
         '1' { 5 }
@@ -1468,7 +1488,12 @@ function Set-WindowsUpdateConfiguration {
 #>
 function Disable-WindowsUpdates {
     [CmdletBinding()]
-    param()
+    param(
+        # Command-line use: run without prompts; -DisableService also stops and
+        # disables the Windows Update service
+        [switch]$Unattended,
+        [switch]$DisableService
+    )
 
     Write-LogMessage "Launching Windows Update disable configuration..." -Level Info -Component 'WindowsUpdate'
 
@@ -1492,7 +1517,8 @@ function Disable-WindowsUpdates {
         Write-Host ""
 
         # Execute the script in the current session
-        & $scriptPath
+        if ($Unattended) { & $scriptPath -Unattended -DisableService:$DisableService }
+        else { & $scriptPath }
 
         Write-LogMessage "Windows Update disable configuration completed" -Level Success -Component 'WindowsUpdate'
     }

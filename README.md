@@ -33,7 +33,8 @@ One command to install and run the complete Windows management suite!
 - **Edge Browser Hardening**: Privacy-focused configuration with about:blank homepage, DuckDuckGo search, disabled MSN feed, and minimal tracking
 
 ### Maintenance
-- **Desktop Info Widget**: System and network information overlay on desktop; shows the
+- **Desktop Info Widget**: System and network information overlay on desktop, installed for
+  every user on the server (each user's own session, at logon); shows the
   toolbox and widget versions plus the last auto-update, and installs a daily SYSTEM task
   ("WinToolbox Auto Update") that keeps the toolbox and the widget current
 - **TLS/PowerShell Upgrade**: Modernize legacy Windows systems (2008R2/2012/2012R2) with TLS 1.2, .NET 4.8, and PowerShell 5.1
@@ -127,7 +128,7 @@ cd C:\Path\To\WinSrvManagementScripts
 Navigate through the menu using number keys:
 
 ```
-Windows Management Toolbox v1.0.9
+Windows Management Toolbox v1.3.0
 ==================================
 
 System Optimization:
@@ -163,6 +164,76 @@ System:
   [Q] Quit
 ```
 
+### Command-Line Usage (no menu)
+
+Every menu option can run straight from PowerShell, without opening the menu.
+Nothing prompts, so it works in scripts, scheduled tasks, RMM tools and remote
+sessions:
+
+```powershell
+cd C:\ProgramData\WinToolbox
+.\WinToolbox.ps1 -Run <Action> [parameters]
+```
+
+- `<Action>` is the action name or its menu number (`-Run DesktopInfo` and `-Run 6` are the same).
+- `.\WinToolbox.ps1 -Run List` prints every action with its parameters.
+- Run from an **elevated** PowerShell (Administrator). `SystemInfo` and `Logs` are the exceptions.
+- Exit code: `0` = success, `1` = failure. Every run is logged in `C:\VLABS\Maintenance\`.
+
+From `cmd.exe`, a scheduled task or an RMM tool, call PowerShell explicitly:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ProgramData\WinToolbox\WinToolbox.ps1" -Run DesktopInfo
+```
+
+On a remote server over WinRM:
+
+```powershell
+Invoke-Command -ComputerName SRV01 -ScriptBlock {
+    & 'C:\ProgramData\WinToolbox\WinToolbox.ps1' -Run WindowsUpdateConfig
+}
+```
+
+#### All actions
+
+| # | Action | What it does | Example |
+|---|--------|--------------|---------|
+| 1 | `DiskCleanup` | Reclaim disk space (WinSxS, updates, TEMP). Inactive profiles are deleted only with `-DeleteProfiles` (no per-profile question). Options: `-DaysInactive`, `-DeepComponentCleanup`, `-Schedule` | `.\WinToolbox.ps1 -Run DiskCleanup -DaysInactive 60 -DeleteProfiles` |
+| 2 | `DisableAnimations` | Disable backgrounds and animations for all users | `.\WinToolbox.ps1 -Run DisableAnimations` |
+| 3 | `Tailscale` | Install Tailscale. Options: `-AuthKey`, `-LoginServer`, `-AcceptRoutes`, `-AdvertiseRoutes`, `-AcceptDNS`, `-Hostname`, `-Operator` | `.\WinToolbox.ps1 -Run Tailscale -AuthKey tskey-abc123 -AcceptRoutes` |
+| 4 | `JumpDesktop` | Install Jump Desktop Connect. Requires `-ConnectCode` | `.\WinToolbox.ps1 -Run JumpDesktop -ConnectCode 123456` |
+| 5 | `EdgeHardening` | Harden Microsoft Edge (privacy, clean homepage) | `.\WinToolbox.ps1 -Run EdgeHardening` |
+| 6 | `DesktopInfo` | Install/update the Desktop Info Widget for **all users** + the daily toolbox auto-update | `.\WinToolbox.ps1 -Run DesktopInfo` |
+| 7 | `TlsUpgrade` | Upgrade TLS 1.2, .NET and PowerShell on legacy systems. Option: `-UpdateRoots` | `.\WinToolbox.ps1 -Run TlsUpgrade -UpdateRoots` |
+| 8 | `VMTools` | Install VM guest tools. Requires `-Platform XCPng` or `-Platform XenServer`. Options: `-NoReboot`, `-DisableWUDrivers` | `.\WinToolbox.ps1 -Run VMTools -Platform XenServer -NoReboot` |
+| 9 | `SpeedTest` | iperf3 test against a peer. Requires `-Peer`. Option: `-Duration 5`, `10` (default) or `30` | `.\WinToolbox.ps1 -Run SpeedTest -Peer 10.0.0.5 -Duration 30` |
+| 10 | `WindowsUpdateConfig` | Windows Update: Sundays 4 AM, security only, no drivers, reboot only then | `.\WinToolbox.ps1 -Run WindowsUpdateConfig` |
+| 11 | `DisableWindowsUpdates` | Disable automatic updates (manual only). Option: `-DisableService` also stops/disables the service | `.\WinToolbox.ps1 -Run DisableWindowsUpdates -DisableService` |
+| 12 | `SystemInfo` | Print OS, CPU, RAM, free space | `.\WinToolbox.ps1 -Run SystemInfo` |
+| 13 | `Logs` | List the log files | `.\WinToolbox.ps1 -Run Logs` |
+| 14 | `Update` | Update the toolbox now if a newer version exists. Option: `-Force` reinstalls anyway | `.\WinToolbox.ps1 -Run Update` |
+| 15 | `WinRM` | Enable hardened WinRM. Options: `-AllowedSource` (comma-separated IPs/CIDRs), `-Https`, `-DisableHttp` | `.\WinToolbox.ps1 -Run WinRM -AllowedSource 192.168.1.240,192.168.1.252` |
+| 16 | `BackupReporter` | Install the WSB Reporter. Requires `-XscpUrl` and `-Token`. Option: `-IntervalMinutes` | `.\WinToolbox.ps1 -Run BackupReporter -XscpUrl http://xscp.example:8899/ingest/wsb -Token abc` |
+
+#### Standalone scripts
+
+Each tool also exists as a standalone script in the install folder, which runs
+without the toolbox (run as Administrator):
+
+| Script | Command line |
+|--------|--------------|
+| `WinSrv - Reclaim Disk Space.ps1` | `& '.\WinSrv - Reclaim Disk Space.ps1' -DaysInactive 30 [-DeepComponentCleanup] [-SkipProfileDeletion] [-Schedule]` |
+| `WinSrv - Disable Backgrounds and Animations.ps1` | `& '.\WinSrv - Disable Backgrounds and Animations.ps1'` |
+| `WinSrv - Tailscale Installer.ps1` | `& '.\WinSrv - Tailscale Installer.ps1' -AuthKey tskey-abc123 [-AcceptRoutes] [-AdvertiseRoutes 10.0.0.0/24] [-AcceptDNS] [-Hostname SRV01]` |
+| `WinSrv - Jump Desktop Connect Installer.ps1` | Asks for the connect code; for no prompts use `-Run JumpDesktop -ConnectCode ...` |
+| `WinSrv - Microsoft Edge Clean.ps1` | `& '.\WinSrv - Microsoft Edge Clean.ps1'` |
+| `WinSrv - Desktop Info.ps1` | `& '.\WinSrv - Desktop Info.ps1'` (all users when run as Administrator) |
+| `WinSrv - Toolbox Auto Update.ps1` | `& '.\WinSrv - Toolbox Auto Update.ps1'` checks/updates now; `-Install` registers the daily task; `-Uninstall` removes it; `-Force` reinstalls |
+| `WinSrv - 2012R2 SSL TLS Upgrader.ps1` | `& '.\WinSrv - 2012R2 SSL TLS Upgrader.ps1' [-UpdateRoots]` |
+| `WinSrv - XenSrv Tools Install.ps1` | Interactive; for no prompts use `-Run VMTools -Platform ...` |
+| `WinSrv - Windows Update Configuration.ps1` | Asks to confirm; for no prompts use `-Run WindowsUpdateConfig` |
+| `WinSrv - Disable Windows Updates.ps1` | `& '.\WinSrv - Disable Windows Updates.ps1' -Unattended [-DisableService]` |
+
 ### Updating the Toolbox
 
 To update to the latest version, simply run the one-liner installer again:
@@ -172,6 +243,10 @@ iex (irm https://raw.githubusercontent.com/GonzFC/WinSrvManagementScripts/main/i
 ```
 
 This will download and replace the existing installation with the latest version.
+
+Without the menu: `.\WinToolbox.ps1 -Run Update`. Installing the Desktop Info
+Widget also registers a daily SYSTEM task ("WinToolbox Auto Update") that does
+this automatically.
 
 ### Automated Disk Cleanup (Scheduled Task)
 
@@ -183,11 +258,13 @@ The disk cleanup function can create a weekly scheduled task:
 # Answer "Yes" when prompted to create scheduled task
 ```
 
-Or run cleanup directly:
+Or run cleanup directly (see [Command-Line Usage](#command-line-usage-no-menu)):
 
 ```powershell
-.\WinToolbox.ps1 -AutoCleanup -DaysInactive 30 -DeepComponentCleanup
+.\WinToolbox.ps1 -Run DiskCleanup -DaysInactive 30 -DeepComponentCleanup
 ```
+
+`-AutoCleanup` is what the weekly scheduled task itself calls.
 
 ## Logging
 
@@ -228,7 +305,7 @@ The toolbox uses a modular architecture for easy maintenance:
 
 ## Original Scripts
 
-The original standalone scripts are preserved in the repository for reference:
+The standalone scripts (command-line usage: see [Standalone scripts](#standalone-scripts)):
 
 - `WinSrv - Desktop Info.ps1`
 - `WinSrv - Toolbox Auto Update.ps1` (daily toolbox/widget updater; `-Install` registers the task)
@@ -239,6 +316,8 @@ The original standalone scripts are preserved in the repository for reference:
 - `WinSrv - Tailscale Installer.ps1`
 - `WinSrv - Reclaim Disk Space.ps1`
 - `WinSrv - XenSrv Tools Install.ps1`
+- `WinSrv - Windows Update Configuration.ps1`
+- `WinSrv - Disable Windows Updates.ps1`
 
 ## Recent Improvements
 

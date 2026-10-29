@@ -24,14 +24,14 @@ $widgetPs1 = @'
 # Desktop Info Widget (runtime)
 # Wallpaper (WorkerW) + 100% click-through + tray | DNS+Gateway | WSB (last 8d: 4,5,517)
 $ErrorActionPreference = "SilentlyContinue"
-$Version = "2026-10-29b"
+$Version = "2026-10-29c"
 $WSB_WindowDays = 8
 
 # TLS (for public IP)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
 
-# Single instance
-$global:mutex = New-Object System.Threading.Mutex($false, "Global\\DesktopInfoWidgetMutex")
+# Single instance PER SESSION ("Local\"): every logged-on user gets their own widget
+$global:mutex = New-Object System.Threading.Mutex($false, "Local\DesktopInfoWidgetMutex")
 if (-not $global:mutex.WaitOne(0, $false)) { exit }
 
 # .NET
@@ -491,30 +491,36 @@ try { $global:mutex.ReleaseMutex() | Out-Null } catch {}
 # Write runtime
 $widgetPs1 | Out-File -FilePath $WidgetScript -Encoding UTF8 -Force
 
-# ---------- Autostart (Scheduled Task → HKCU Run fallback) ----------
+# ---------- Autostart for ALL users (Scheduled Task -> HKLM Run -> HKCU Run) ----------
+# One task with an any-user logon trigger and the BUILTIN\Users group as principal:
+# Windows starts the widget in each user's own session, as that user, at logon.
 function Ensure-Autostart {
   param([string]$TaskName,[string]$ScriptPath)
-  $created = $false
+  $cmd = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
+  $runValue = "powershell.exe $cmd"
+  # Drop the old per-user Run entry (it would only duplicate the all-users one)
+  try { Remove-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'DesktopInfoWidget' -ErrorAction SilentlyContinue } catch {}
   try {
     try { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue } catch {}
-    $action  = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`""
-    $trigger = New-ScheduledTaskTrigger -AtLogOn
-    try {
-      $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel LeastPrivilege
-    } catch {
-      $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType InteractiveOrPassword -RunLevel LeastPrivilege
-    }
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal | Out-Null
-    $created = $true
-  } catch { $created = $false }
-
-  if (-not $created) {
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    New-Item -Path $runKey -Force | Out-Null
-    New-ItemProperty -Path $runKey -Name 'DesktopInfoWidget' -PropertyType String -Force `
-      -Value "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ScriptPath`"" | Out-Null
-    return "RunKey"
-  } else { return "ScheduledTask" }
+    $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $cmd
+    $trigger   = New-ScheduledTaskTrigger -AtLogOn
+    $principal = New-ScheduledTaskPrincipal -GroupId 'S-1-5-32-545' -RunLevel Limited
+    # No time limit (the default 72h would kill the widget) and one instance per user
+    $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances Parallel `
+                   -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings | Out-Null
+    try { Remove-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'DesktopInfoWidget' -ErrorAction SilentlyContinue } catch {}
+    return "ScheduledTask (all users)"
+  } catch {}
+  try {
+    New-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'DesktopInfoWidget' -PropertyType String -Force -Value $runValue -ErrorAction Stop | Out-Null
+    return "HKLM Run (all users)"
+  } catch {}
+  # Not elevated: current user only
+  $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+  New-Item -Path $runKey -Force | Out-Null
+  New-ItemProperty -Path $runKey -Name 'DesktopInfoWidget' -PropertyType String -Force -Value $runValue | Out-Null
+  return "HKCU Run (current user only - run as Administrator for all users)"
 }
 $autostartMethod = Ensure-Autostart -TaskName $TaskName -ScriptPath $WidgetScript
 
@@ -526,11 +532,14 @@ if (Test-Path $updater) {
   catch { $autoUpdate = "not configured ($($_.Exception.Message))" }
 }
 
-# ---------- Restart any running instance, then launch fresh ----------
+# ---------- Restart the widget in THIS session, launch fresh ----------
+# Other users' widgets relaunch themselves when they see the script file change;
+# users without one get it at their next logon.
 try {
-  $needle = [Regex]::Escape($WidgetScript)
+  $needle  = [Regex]::Escape($WidgetScript)
+  $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
   $proc = Get-CimInstance Win32_Process -Filter "Name='powershell.exe' OR Name='pwsh.exe'" -ErrorAction SilentlyContinue |
-          Where-Object { $_.CommandLine -and $_.CommandLine -match $needle }
+          Where-Object { $_.SessionId -eq $session -and $_.CommandLine -and $_.CommandLine -match $needle }
   if ($proc) {
     $proc | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
     Start-Sleep -Milliseconds 300
@@ -539,6 +548,6 @@ try {
 Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$WidgetScript`"" -WindowStyle Hidden
 
 Write-Host "✅ Desktop Info Widget installed/updated in: $InstallRoot"
-Write-Host "   Autostart: $autostartMethod (Task '$TaskName' or HKCU\\...\\Run)"
+Write-Host "   Autostart: $autostartMethod"
 Write-Host "   Shows DNS Servers & Default Gateways; WSB last 8 days"
 Write-Host "   Toolbox auto-update: $autoUpdate"

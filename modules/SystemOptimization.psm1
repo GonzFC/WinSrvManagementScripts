@@ -21,7 +21,9 @@ function Invoke-DiskSpaceReclamation {
         [int]$DaysInactive = 30,
         [switch]$DeepComponentCleanup,
         [switch]$SkipProfileDeletion,
-        [switch]$Schedule
+        [switch]$Schedule,
+        # Delete inactive profiles without asking for each one (command-line use)
+        [switch]$Force
     )
 
     Write-LogMessage "Starting disk space reclamation" -Level Info -Component 'DiskCleanup'
@@ -86,7 +88,7 @@ function Invoke-DiskSpaceReclamation {
 
     # 5. Inactive Profiles
     if (-not $SkipProfileDeletion) {
-        $gains['Profiles'] = Remove-InactiveProfiles -DaysInactive $DaysInactive
+        $gains['Profiles'] = Remove-InactiveProfiles -DaysInactive $DaysInactive -Force:$Force
     }
 
     # 6. Schedule task if requested
@@ -310,7 +312,7 @@ function Clear-TempFolders {
 }
 
 function Remove-InactiveProfiles {
-    param([int]$DaysInactive)
+    param([int]$DaysInactive, [switch]$Force)
 
     $before = Get-FreeSpaceGB
     $threshold = (Get-Date).AddDays(-[Math]::Abs($DaysInactive))
@@ -328,7 +330,7 @@ function Remove-InactiveProfiles {
             $userName = Split-Path $profile.LocalPath -Leaf
             $question = "Delete inactive profile '$userName' (Last used: $lastUse)?"
 
-            if (Show-Confirmation -Message $question -DefaultYes:$false) {
+            if ($Force -or (Show-Confirmation -Message $question -DefaultYes:$false)) {
                 Write-LogMessage "Deleting profile: $($profile.LocalPath)" -Level Info -Component 'DiskCleanup'
 
                 try {

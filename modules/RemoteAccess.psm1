@@ -236,7 +236,10 @@ catch {
 #>
 function Install-JumpDesktopConnect {
     [CmdletBinding()]
-    param()
+    param(
+        # Skips the prompt (command-line use)
+        [string]$ConnectCode
+    )
 
     Write-LogMessage "Installing Jump Desktop Connect..." -Level Info -Component 'JumpDesktop'
 
@@ -244,7 +247,7 @@ function Install-JumpDesktopConnect {
 
     # Get connect code
     Write-Host ""
-    $rawCode = Read-Host "Enter your 6-digit Jump Desktop Connect Code"
+    $rawCode = if ($ConnectCode) { $ConnectCode } else { Read-Host "Enter your 6-digit Jump Desktop Connect Code" }
     if ([string]::IsNullOrWhiteSpace($rawCode)) {
         throw "Connect Code is required"
     }

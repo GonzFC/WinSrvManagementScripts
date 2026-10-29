@@ -32,13 +32,23 @@
     .\WinSrv - Disable Windows Updates.ps1
 
     Runs interactively and disables automatic Windows updates.
+
+.EXAMPLE
+    .\WinSrv - Disable Windows Updates.ps1 -Unattended -DisableService
+
+    No prompts; also stops and disables the Windows Update service.
 #>
 
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
 [CmdletBinding()]
-param()
+param(
+    # No prompts and no "press any key" at the end (command-line / scripted use)
+    [switch]$Unattended,
+    # With -Unattended: also stop and disable the Windows Update service
+    [switch]$DisableService
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -113,7 +123,7 @@ Write-Host ""
 
 # Confirmation
 Write-Host "Do you understand and want to proceed? [Y/n]: " -ForegroundColor Yellow -NoNewline
-$response = Read-Host
+$response = if ($Unattended) { 'Y' } else { Read-Host }
 
 if ($response -match '^[Nn]') {
     Write-Host ""
@@ -232,7 +242,7 @@ try {
     Write-Host "  [N] No  - Leave service running (recommended, allows manual checks)" -ForegroundColor White
     Write-Host ""
     Write-Host "Choice [Y/n]: " -ForegroundColor Yellow -NoNewline
-    $serviceResponse = Read-Host
+    $serviceResponse = if ($Unattended) { if ($DisableService) { 'Y' } else { 'N' } } else { Read-Host }
 
     if ($serviceResponse -match '^[Yy]') {
         Write-Host ""
@@ -302,7 +312,9 @@ catch {
     exit 1
 }
 
-Write-Host "Press any key to exit..." -ForegroundColor Gray
-$null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+if (-not $Unattended) {
+    Write-Host "Press any key to exit..." -ForegroundColor Gray
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+}
 
 #endregion

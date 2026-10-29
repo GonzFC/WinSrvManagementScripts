@@ -5,6 +5,33 @@ All notable changes to Windows Management Toolbox will be documented in this fil
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-29
+
+### Added
+- Command-line mode: `.\WinToolbox.ps1 -Run <Action> [parameters]` runs any menu
+  action (by name or menu number) with no menu and no prompts, exits 0/1, and
+  logs the run. `-Run List` prints every action. README has a full reference,
+  including the standalone scripts' command lines.
+- New parameters so those runs never stop to ask: `Install-XenServerTools
+  -Platform`, `Invoke-NetworkSpeedTest -Peer -Duration`, `Install-JumpDesktopConnect
+  -ConnectCode`, `Invoke-DiskSpaceReclamation -Force` (CLI: `-DeleteProfiles`),
+  and `-Unattended [-DisableService]` on `WinSrv - Disable Windows Updates.ps1`.
+
+### Changed
+- Desktop Info Widget installs for ALL users, with no confirmation: one
+  scheduled task with an any-user logon trigger runs it in each user's own
+  session (fallback: HKLM Run key; without admin rights: current user only).
+  Reinstalling restarts the widget in the installer's session; other users'
+  widgets relaunch themselves when the script changes.
+
+### Fixed
+- Only one widget could run per server: its single-instance lock was
+  machine-wide (`Global\`), so a second logged-on user's widget exited at once.
+  It is now per session (`Local\`).
+- The widget's autostart task used the default 72-hour execution limit, so Task
+  Scheduler killed the widget after 3 days. The limit is now off.
+- "Update later from the main menu (option 13)" pointed at the wrong option (14).
+
 ## [1.2.0] - 2026-10-29
 
 ### Added
